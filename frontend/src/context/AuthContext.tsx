@@ -1,8 +1,9 @@
 import React, { createContext, useContext, useEffect, useState, useCallback } from "react";
 import { useRouter, useSegments } from "expo-router";
 
-import { api, clearToken, saveToken } from "@/src/lib/api";
+import { api, AUTH_TOKEN_KEY, clearToken, saveToken } from "@/src/lib/api";
 import type { Business } from "@/src/lib/types";
+import { storage } from "@/src/utils/storage";
 
 type Me = { id: string; email: string; business_id: string; name?: string | null };
 
@@ -29,6 +30,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const loadSession = useCallback(async () => {
     try {
+      const token = await storage.secureGet<string | null>(AUTH_TOKEN_KEY, null);
+      if (!token) {
+        setUser(null);
+        setBusiness(null);
+        return;
+      }
       const me = await api.get<Me>("/auth/me");
       setUser(me);
       const biz = await api.get<Business>("/business/me");
