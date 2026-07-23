@@ -143,16 +143,26 @@ export default function Settings() {
       );
       return;
     }
+    if (!business?.id) {
+      Alert.alert("Error", "Business not loaded. Please try again in a moment.");
+      return;
+    }
+    // Append client_reference_id (PLAN.BUSINESS_ID) so the Stripe webhook can
+    // auto-activate the plan on payment. Prefill the email for a smoother flow.
+    const clientRef = `${p.key}.${business.id}`;
+    const params = new URLSearchParams({ client_reference_id: clientRef });
+    if (user?.email) params.append("prefilled_email", user.email);
+    const url = `${p.upgrade_url}?${params.toString()}`;
+
     Alert.alert(
       `Upgrade to ${p.label}`,
-      `You'll be sent to Stripe to pay ${p.price_label}. After payment, come back and tap "I've paid — activate ${p.label}" to unlock your new limit.`,
+      `You'll be sent to Stripe to pay ${p.price_label}. Your plan will activate automatically the moment payment succeeds — no action needed on your end.`,
       [
         { text: "Cancel", style: "cancel" },
         {
           text: "Open Stripe",
-          onPress: () => Linking.openURL(p.upgrade_url as string).catch(() =>
-            Alert.alert("Error", "Could not open the payment page.")
-          ),
+          onPress: () =>
+            Linking.openURL(url).catch(() => Alert.alert("Error", "Could not open the payment page.")),
         },
       ]
     );
@@ -277,15 +287,7 @@ export default function Settings() {
                         disabled={savingPlan}
                       >
                         <Feather name="external-link" size={14} color={colors.onBrandPrimary} />
-                        <Text style={styles.upgradeBtnText}>Upgrade</Text>
-                      </TouchableOpacity>
-                      <TouchableOpacity
-                        testID={`plan-${p.key.toLowerCase()}-activate`}
-                        onPress={() => switchPlan(p.key)}
-                        disabled={savingPlan}
-                        style={styles.activateBtn}
-                      >
-                        <Text style={styles.activateBtnText}>I&apos;ve paid — activate</Text>
+                        <Text style={styles.upgradeBtnText}>Upgrade — {p.price_label}</Text>
                       </TouchableOpacity>
                     </View>
                   ) : (
@@ -304,7 +306,7 @@ export default function Settings() {
               );
             })}
             <Text style={styles.help}>
-              Upgrades open Stripe for a one-time or recurring charge. After paying, tap &quot;I&apos;ve paid — activate&quot; to unlock the new invoice limit. Automatic activation via webhook coming soon.
+              Upgrades open Stripe. Your plan activates automatically the moment payment succeeds — no need to come back to the app.
             </Text>
           </Card>
 

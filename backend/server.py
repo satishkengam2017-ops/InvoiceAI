@@ -14,7 +14,7 @@ from typing import Any, List, Optional
 
 from anthropic import AsyncAnthropic
 from dotenv import load_dotenv
-from fastapi import APIRouter, Depends, FastAPI, HTTPException, status
+from fastapi import APIRouter, Depends, FastAPI, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jose import JWTError, jwt
 from motor.motor_asyncio import AsyncIOMotorClient
@@ -22,6 +22,7 @@ from passlib.context import CryptContext
 from pymongo import ReturnDocument
 from pydantic import BaseModel, EmailStr, Field
 from starlette.middleware.cors import CORSMiddleware
+import stripe
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / ".env")
@@ -34,6 +35,7 @@ DB_NAME = os.environ["DB_NAME"]
 JWT_SECRET = os.environ.get("JWT_SECRET", "dev-secret-change-me-in-prod-invoiceai-32chars")
 JWT_ALG = "HS256"
 JWT_EXPIRES_MIN = 60 * 24 * 30  # 30 days
+STRIPE_WEBHOOK_SECRET = os.environ.get("STRIPE_WEBHOOK_SECRET", "")
 
 client = AsyncIOMotorClient(MONGO_URL)
 db = client[DB_NAME]
@@ -950,6 +952,103 @@ async def ai_extract_invoice(payload: AIExtractIn, ctx: dict = Depends(get_busin
     if not extracted:
         raise HTTPException(status_code=500, detail="AI returned no structured data")
     return {"draft": extracted}
+
+
+# ---------------------------------------------------------------------------
+# Stripe webhook (public, signature-verified, idempotent)
+# ---------------------------------------------------------------------------
+VALID_PLANS = {"FREE", "STARTER", "PRO"}
+
+
+@api.post("/webhooks/stripe")
+async def stripe_webhook(request: Request):
+    """Handle Stripe events for automatic plan activation/deactivation.
+
+    Payment Links redirect back with client_reference_id = "PLAN.BUSINESS_ID".
+    We flip business.plan on checkout.session.completed and downgrade to FREE
+    on customer.subscription.deleted. All events are deduped via WebhookEvent.
+    """
+    if not STRIPE_WEBHOOK_SECRET:
+        raise HTTPException(
+            status_code=503,
+            detail="Stripe webhook secret not configured. Set STRIPE_WEBHOOK_SECRET.",
+        )
+
+    # MUST read raw body BEFORE any JSON parsing for signature verification.
+    payload = await request.body()
+    sig_header = request.headers.get("stripe-signature")
+    if not sig_header:
+        raise HTTPException(status_code=400, detail="Missing stripe-signature header")
+
+    try:
+        event = stripe.Webhook.construct_event(payload, sig_header, STRIPE_WEBHOOK_SECRET)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid payload")
+    except stripe.SignatureVerificationError:
+        raise HTTPException(status_code=400, detail="Invalid signature")
+
+    event_id = event["id"]
+    event_type = event["type"]
+    obj = event["data"]["object"]
+
+    # Idempotency dedupe — process each Stripe event exactly once.
+    if await db.webhook_events.find_one({"id": event_id}):
+        return {"status": "ok", "message": "duplicate"}
+
+    log.info("Stripe webhook received: %s (%s)", event_type, event_id)
+
+    if event_type == "checkout.session.completed":
+        client_ref = obj.get("client_reference_id") or ""
+        customer_id = obj.get("customer")
+        subscription_id = obj.get("subscription")
+        if "." in client_ref:
+            plan, biz_id = client_ref.split(".", 1)
+            plan = plan.upper()
+            if plan in VALID_PLANS and biz_id:
+                update: dict = {
+                    "plan": plan,
+                    "updated_at": now_iso(),
+                }
+                if customer_id:
+                    update["stripe_customer_id"] = customer_id
+                if subscription_id:
+                    update["stripe_subscription_id"] = subscription_id
+                res = await db.businesses.update_one({"id": biz_id}, {"$set": update})
+                log.info(
+                    "checkout.session.completed → business=%s plan=%s matched=%s",
+                    biz_id, plan, res.matched_count,
+                )
+            else:
+                log.warning("Ignoring session with malformed client_reference_id=%r", client_ref)
+        else:
+            log.warning("checkout.session.completed missing client_reference_id")
+
+    elif event_type == "customer.subscription.deleted":
+        # Subscription cancellation events don't include client_reference_id;
+        # look the business up by the stripe_customer_id we stored on checkout.
+        customer_id = obj.get("customer")
+        if customer_id:
+            res = await db.businesses.update_one(
+                {"stripe_customer_id": customer_id},
+                {"$set": {"plan": "FREE", "updated_at": now_iso()}},
+            )
+            log.info(
+                "customer.subscription.deleted → customer=%s matched=%s",
+                customer_id, res.matched_count,
+            )
+
+    elif event_type == "invoice.payment_failed":
+        # Non-fatal: log for observability, keep plan as-is.
+        log.warning("Stripe invoice.payment_failed for customer=%s", obj.get("customer"))
+
+    # Persist the processed event id LAST so a mid-processing crash retries safely.
+    await db.webhook_events.insert_one({
+        "id": event_id,
+        "type": event_type,
+        "processed_at": now_iso(),
+    })
+
+    return {"status": "ok"}
 
 
 # ---------------------------------------------------------------------------

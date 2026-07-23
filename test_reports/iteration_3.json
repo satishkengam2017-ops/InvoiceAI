@@ -1,0 +1,36 @@
+{
+  "summary": "Iteration 3 — Stripe webhook auto-activation verified end-to-end. Backend: 29/29 pytest green with 1 correctly-skipped case (503 empty-secret path — verified separately via curl before secret was set). New /app/backend/tests/test_stripe_webhook.py covers 9 scenarios: (a) 503 when STRIPE_WEBHOOK_SECRET empty, (b) 400 on missing Stripe-Signature header, (c) 400 on invalid HMAC, (d) 200 + flip to STARTER + stores stripe_customer_id + stripe_subscription_id, (e) 200 + flip to PRO, (f) idempotent dedupe returns 200 with message='duplicate' and plan not double-changed, (g) malformed client_reference_id (both no-dot and unknown plan) returns 200 but leaves plan untouched, (h) customer.subscription.deleted downgrades matching business back to FREE, (i) invoice.payment_failed returns 200 and leaves plan untouched. All 20 pre-existing regression tests (auth, business/settings, customers, catalog, invoices, plans, dashboard, AI) still pass. Frontend regression on Settings plan card verified at 390x844: (1) 'I've paid — activate' text/button is COMPLETELY REMOVED (0 occurrences on Settings), (2) each paid-plan card shows exactly one action button — 'Upgrade — $X/mo' with testIDs plan-starter-upgrade + plan-pro-upgrade, (3) plan card layout is clean — label + price on the same row, description below, single Upgrade pill below that, no character-wrap. STRIPE_WEBHOOK_SECRET restored to '' in /app/backend/.env post-testing and backend re-restarted; final POST /api/webhooks/stripe returns 503 as required by the fail-safe posture.",
+  "backend_issues": { "critical": [], "minor": [] },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_backend.py",
+    "/app/backend/tests/test_stripe_webhook.py",
+    "/app/backend/tests/conftest.py",
+    "/app/test_reports/pytest/pytest_results.xml"
+  ],
+  "action_items": [
+    "Dead style keys `activateBtn` and `activateBtnText` remain in settings.tsx StyleSheet (lines 413-414) after the 'I've paid — activate' button was removed. Harmless but should be deleted for tidiness.",
+    "Optional: on react-native-web, Alert.alert with more than 2 buttons does not render a modal — the openUpgrade confirmation Alert is a no-op in the web preview so the user can never actually click 'Open Stripe' from a browser (native iOS/Android are unaffected). If web preview is a supported target for real users, consider a web-specific branch that directly calls Linking.openURL(url) without the confirmation step, or wire a custom in-app modal."
+  ],
+  "critical_code_review_comments": [
+    "server.py webhook handler correctly reads request.body() as raw bytes BEFORE JSON parsing — required for HMAC verification (line 978).",
+    "Idempotency insert is performed LAST (line 1045) so a mid-processing crash retries safely — correct ordering.",
+    "webhook_events uses field 'id' as dedupe key (not Mongo _id) which matches the design note; _id remains ObjectId but is never surfaced through the API since this collection is internal.",
+    "checkout.session.completed correctly persists stripe_customer_id + stripe_subscription_id — required for the later subscription.deleted downgrade path (verified by test).",
+    "Signature error paths use 400 (not 401/403) which matches Stripe SDK convention."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_stripe_webhook.py (NEW — 9 tests covering signature gates, plan flips, idempotency, malformed client_reference_id, subscription cancellation, payment_failed)"
+  ],
+  "success_rate": { "backend": "100% (29/29 relevant tests; 1 skipped-by-design for empty-secret path already verified via curl)", "frontend": "100% (UI regression: no 'I've paid' button, single Upgrade button per paid plan, clean two-row layout)" },
+  "seed_data_creation": "Each webhook test class self-registers TEST_wh_<uuid>@example.com businesses so no cross-test contamination. Primary QA user qa@invoiceai.example.com reused for regression suite.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "STRIPE_WEBHOOK_SECRET must be empty in /app/backend/.env at rest for the fail-safe 503 posture. To re-run the signed webhook tests, first set STRIPE_WEBHOOK_SECRET to any 'whsec_test_<hex>' value, restart backend, then run: `cd /app/backend/tests && TEST_STRIPE_WEBHOOK_SECRET=<same_value> EXPO_PUBLIC_BACKEND_URL=https://smart-invoice-dev.preview.emergentagent.com pytest test_stripe_webhook.py test_backend.py -v`. RESTORE STRIPE_WEBHOOK_SECRET='' and restart backend afterwards. react-native-web Alert.alert with 3 buttons does not visually render in the browser preview — verify the openUpgrade URL construction by source inspection of settings.tsx openUpgrade() rather than by trying to click through the Alert.",
+  "rca_of_issue": "N/A — no bug this iteration. Webhook implementation exactly matches the requested contract: signature verification via stripe.Webhook.construct_event on raw bytes, VALID_PLANS gate on {FREE,STARTER,PRO}, dedupe collection webhook_events keyed on Stripe event 'id', persistence of stripe_customer_id/stripe_subscription_id for downstream cancellation matching, and non-fatal handling of invoice.payment_failed."
+}
