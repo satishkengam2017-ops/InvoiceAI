@@ -1,5 +1,4 @@
 import { Feather } from "@expo/vector-icons";
-import * as Print from "expo-print";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import * as Sharing from "expo-sharing";
 import React, { useCallback, useEffect, useState } from "react";
@@ -22,7 +21,7 @@ import { Input } from "@/src/components/Input";
 import { StatusPill } from "@/src/components/StatusPill";
 import { useAuth } from "@/src/context/AuthContext";
 import { api } from "@/src/lib/api";
-import { invoiceHtml } from "@/src/lib/invoicePdf";
+import { generateInvoicePdfFile, invoiceHtml } from "@/src/lib/invoicePdf";
 import { formatMoney, parseCents } from "@/src/lib/money";
 import { colors, radius, spacing, typography } from "@/src/lib/theme";
 import type { Business, Invoice } from "@/src/lib/types";
@@ -92,38 +91,30 @@ export default function InvoiceDetail() {
     }
   };
 
-  const share = async () => {
+  const sharePdf = async () => {
     if (!invoice) return;
     setBusy(true);
     try {
-      const html = invoiceHtml(invoice, business as Business);
       if (Platform.OS === "web") {
-        // Prefer Web Share API on mobile browsers; fall back to opening a printable tab.
-        const nav = typeof navigator !== "undefined" ? (navigator as Navigator & { share?: (data: { title?: string; text?: string; url?: string }) => Promise<void> }) : undefined;
-        const payUrl = invoice.stripe_payment_url;
-        const text = `Invoice ${invoice.number} from ${business?.name}: ${formatMoney(invoice.total_cents, invoice.currency)}${payUrl ? ` — Pay: ${payUrl}` : ""}`;
-        if (nav?.share) {
-          try {
-            await nav.share({ title: `Invoice ${invoice.number}`, text, url: payUrl || undefined });
-            await markSentIfDraft();
-            return;
-          } catch {
-            // user cancelled — fall through to print
-          }
-        }
-        openHtmlInNewTab(html, true);
+        // Browsers can't attach a locally generated PDF without a PDF library;
+        // open the print-ready invoice so the user can save/share it as PDF
+        // (the document title makes the suggested filename Invoice-<number>.pdf).
+        openHtmlInNewTab(invoiceHtml(invoice, business as Business), true);
       } else {
-        const { uri } = await Print.printToFileAsync({ html, base64: false });
+        // Generate the actual PDF and hand it to the native share sheet, so the
+        // recipient gets Invoice-<number>.pdf as a real attachment (Mail,
+        // WhatsApp, Messages, AirDrop, Drive, ...).
+        const { uri, fileName } = await generateInvoicePdfFile(invoice, business as Business);
         const canShare = await Sharing.isAvailableAsync();
-        if (canShare) {
-          await Sharing.shareAsync(uri, {
-            mimeType: "application/pdf",
-            dialogTitle: `Send ${invoice.number}`,
-            UTI: "com.adobe.pdf",
-          });
-        } else {
+        if (!canShare) {
           Alert.alert("Sharing unavailable", "Sharing isn't available on this device.");
+          return;
         }
+        await Sharing.shareAsync(uri, {
+          mimeType: "application/pdf",
+          dialogTitle: `Send ${fileName}`,
+          UTI: "com.adobe.pdf",
+        });
       }
       await markSentIfDraft();
     } catch (e) {
@@ -137,25 +128,25 @@ export default function InvoiceDetail() {
     if (!invoice) return;
     setBusy(true);
     try {
-      const html = invoiceHtml(invoice, business as Business);
       if (Platform.OS === "web") {
-        // Open a printable tab and immediately trigger the print dialog so the user
-        // can "Save as PDF" from the browser (Chrome/Safari/Firefox all support this).
-        openHtmlInNewTab(html, true);
+        // Open a printable tab and trigger the print dialog so the user can
+        // "Save as PDF"; the tab title makes the suggested filename correct.
+        openHtmlInNewTab(invoiceHtml(invoice, business as Business), true);
       } else {
-        const { uri } = await Print.printToFileAsync({ html, base64: false });
+        const { uri, fileName } = await generateInvoicePdfFile(invoice, business as Business);
         const canShare = await Sharing.isAvailableAsync();
-        if (canShare) {
-          await Sharing.shareAsync(uri, {
-            mimeType: "application/pdf",
-            dialogTitle: `Save ${invoice.number}.pdf`,
-            UTI: "com.adobe.pdf",
-          });
-        } else {
+        if (!canShare) {
           Alert.alert("Download unavailable", "PDF download isn't available on this device.");
+          return;
         }
+        // The system sheet is how files land on device: "Save to Files" on
+        // iOS, file manager / Drive on Android.
+        await Sharing.shareAsync(uri, {
+          mimeType: "application/pdf",
+          dialogTitle: `Save ${fileName}`,
+          UTI: "com.adobe.pdf",
+        });
       }
-      setShowActions(false);
     } catch (e) {
       Alert.alert("Download failed", e instanceof Error ? e.message : "Unknown error");
     } finally {
@@ -321,23 +312,33 @@ export default function InvoiceDetail() {
       {!isVoid ? (
         <View style={styles.actionBar}>
           <TouchableOpacity
-            testID="invoice-share-btn"
-            style={styles.actionBtn}
-            onPress={share}
+            testID="invoice-download-pdf-btn"
+            style={[styles.actionBtn, styles.actionBtnOutline]}
+            onPress={downloadPdf}
             disabled={busy}
             activeOpacity={0.85}
           >
-            <Feather name="share-2" size={18} color={colors.onBrandPrimary} />
-            <Text style={styles.actionBtnText}>Share</Text>
+            <Feather name="download" size={20} color={colors.brand} />
+            <Text style={[styles.actionBtnText, { color: colors.brand }]}>Download PDF</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            testID="invoice-share-btn"
+            style={styles.actionBtn}
+            onPress={sharePdf}
+            disabled={busy}
+            activeOpacity={0.85}
+          >
+            <Feather name="share-2" size={20} color={colors.onBrandPrimary} />
+            <Text style={styles.actionBtnText}>Share PDF</Text>
           </TouchableOpacity>
           {!isPaid ? (
             <TouchableOpacity
               testID="invoice-mark-paid-btn"
-              style={[styles.actionBtn, { backgroundColor: colors.surfaceSecondary, borderWidth: 1, borderColor: colors.brand }]}
+              style={[styles.actionBtn, styles.actionBtnOutline]}
               onPress={openPay}
               disabled={busy}
             >
-              <Feather name="check-circle" size={18} color={colors.brand} />
+              <Feather name="dollar-sign" size={20} color={colors.brand} />
               <Text style={[styles.actionBtnText, { color: colors.brand }]}>Record Payment</Text>
             </TouchableOpacity>
           ) : null}
@@ -348,10 +349,6 @@ export default function InvoiceDetail() {
       <Modal visible={showActions} transparent animationType="fade" onRequestClose={() => setShowActions(false)}>
         <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={() => setShowActions(false)}>
           <View style={styles.actionsSheet}>
-            <TouchableOpacity testID="invoice-download-pdf" style={styles.actionRow} onPress={downloadPdf} disabled={busy}>
-              <Feather name="download" size={18} color={colors.onSurface} />
-              <Text style={styles.actionRowText}>Download PDF</Text>
-            </TouchableOpacity>
             <TouchableOpacity testID="invoice-duplicate" style={styles.actionRow} onPress={duplicate}>
               <Feather name="copy" size={18} color={colors.onSurface} />
               <Text style={styles.actionRowText}>Duplicate</Text>
@@ -480,16 +477,26 @@ const styles = StyleSheet.create({
   },
   actionBtn: {
     flex: 1,
-    flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    gap: spacing.sm,
+    gap: 4,
     backgroundColor: colors.brand,
-    paddingVertical: spacing.md,
+    paddingVertical: spacing.sm,
+    paddingHorizontal: 4,
     borderRadius: radius.md,
-    minHeight: 48,
+    minHeight: 56,
   },
-  actionBtnText: { color: colors.onBrandPrimary, fontWeight: "500", fontSize: typography.base },
+  actionBtnOutline: {
+    backgroundColor: colors.surfaceSecondary,
+    borderWidth: 1,
+    borderColor: colors.brand,
+  },
+  actionBtnText: {
+    color: colors.onBrandPrimary,
+    fontWeight: "500",
+    fontSize: 12,
+    textAlign: "center",
+  },
   modalOverlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.4)", justifyContent: "flex-end" },
   actionsSheet: {
     backgroundColor: colors.surface,
