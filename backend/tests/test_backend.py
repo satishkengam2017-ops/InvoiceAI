@@ -1,0 +1,329 @@
+"""End-to-end backend tests for InvoiceAI FastAPI service."""
+import time
+import uuid
+import requests
+from conftest import API
+
+
+# ---------------------------------------------------------------------------
+# Health
+# ---------------------------------------------------------------------------
+class TestHealth:
+    def test_health_ok(self, api_client):
+        r = api_client.get(f"{API}/health")
+        assert r.status_code == 200
+        body = r.json()
+        assert body.get("status") == "ok"
+
+
+# ---------------------------------------------------------------------------
+# Auth
+# ---------------------------------------------------------------------------
+class TestAuth:
+    def test_register_duplicate_returns_400(self, api_client):
+        # Register a new user first
+        email = f"TEST_{uuid.uuid4().hex[:10]}@example.com"
+        r = api_client.post(f"{API}/auth/register", json={
+            "email": email, "password": "Password123!", "business_name": "TEST_Dup"
+        })
+        assert r.status_code == 200
+        # Duplicate
+        r2 = api_client.post(f"{API}/auth/register", json={
+            "email": email, "password": "Password123!", "business_name": "TEST_Dup"
+        })
+        assert r2.status_code == 400
+
+    def test_login_wrong_password_400(self, api_client):
+        r = api_client.post(f"{API}/auth/login", json={
+            "email": "qa@invoiceai.example.com", "password": "WRONG_PASSWORD_x"
+        })
+        assert r.status_code == 400
+
+    def test_login_success_returns_token(self, api_client):
+        r = api_client.post(f"{API}/auth/login", json={
+            "email": "qa@invoiceai.example.com", "password": "Password123!"
+        })
+        assert r.status_code == 200
+        data = r.json()
+        assert "access_token" in data and data.get("token_type") == "bearer"
+
+    def test_me_requires_token(self, api_client):
+        r = api_client.get(f"{API}/auth/me")
+        assert r.status_code == 401
+
+    def test_me_with_valid_token(self, auth_client):
+        r = auth_client.get(f"{API}/auth/me")
+        assert r.status_code == 200
+        body = r.json()
+        assert body["email"] == "qa@invoiceai.example.com"
+        assert "business_id" in body and body["business_id"]
+        assert "_id" not in body
+
+
+# ---------------------------------------------------------------------------
+# Business + Settings
+# ---------------------------------------------------------------------------
+class TestBusiness:
+    def test_get_business_never_exposes_raw_key(self, auth_client):
+        r = auth_client.get(f"{API}/business/me")
+        assert r.status_code == 200
+        body = r.json()
+        assert "anthropic_api_key" not in body
+        assert "has_anthropic_key" in body
+        assert "_id" not in body
+
+    def test_patch_business_updates_fields(self, auth_client):
+        r = auth_client.patch(f"{API}/business/me", json={
+            "name": "QA Testing Co", "invoice_prefix": "INV", "currency": "USD",
+            "default_due_days": 14, "country": "US",
+        })
+        assert r.status_code == 200
+        assert r.json()["name"] == "QA Testing Co"
+
+    def test_settings_rejects_invalid_plan(self, auth_client):
+        r = auth_client.patch(f"{API}/settings", json={"plan": "ENTERPRISE"})
+        assert r.status_code == 400
+
+    def test_settings_updates_anthropic_key_masked(self, auth_client):
+        r = auth_client.patch(f"{API}/settings", json={
+            "anthropic_api_key": "sk-ant-DUMMY-not-a-real-key",
+            "stripe_payment_url_default": "https://buy.stripe.com/test_dummy",
+        })
+        assert r.status_code == 200
+        body = r.json()
+        assert body["has_anthropic_key"] is True
+        assert "anthropic_api_key" not in body
+        assert body["stripe_payment_url_default"] == "https://buy.stripe.com/test_dummy"
+
+
+# ---------------------------------------------------------------------------
+# Customers CRUD + business isolation
+# ---------------------------------------------------------------------------
+class TestCustomers:
+    def test_customer_crud(self, auth_client):
+        # Create
+        r = auth_client.post(f"{API}/customers", json={
+            "name": "TEST_Acme Corp", "email": "TEST_acme@example.com", "company": "Acme"
+        })
+        assert r.status_code == 200
+        cust = r.json()
+        cid = cust["id"]
+        assert cust["name"] == "TEST_Acme Corp"
+        assert "_id" not in cust
+
+        # Get
+        r = auth_client.get(f"{API}/customers/{cid}")
+        assert r.status_code == 200
+        assert r.json()["id"] == cid
+
+        # List
+        r = auth_client.get(f"{API}/customers")
+        assert r.status_code == 200
+        assert any(c["id"] == cid for c in r.json())
+
+        # Patch
+        r = auth_client.patch(f"{API}/customers/{cid}", json={
+            "name": "TEST_Acme Corp Updated", "company": "Acme"
+        })
+        assert r.status_code == 200
+        assert r.json()["name"] == "TEST_Acme Corp Updated"
+
+        # Delete (archive)
+        r = auth_client.delete(f"{API}/customers/{cid}")
+        assert r.status_code == 200
+
+        # Ensure archived customer no longer listed
+        r = auth_client.get(f"{API}/customers")
+        assert not any(c["id"] == cid for c in r.json())
+
+    def test_business_isolation(self, auth_client, fresh_business):
+        # Create in primary business
+        r = auth_client.post(f"{API}/customers", json={"name": "TEST_ISO_Primary"})
+        assert r.status_code == 200
+        primary_cid = r.json()["id"]
+
+        # Fresh business should NOT see this customer
+        s = fresh_business["session"]
+        r = s.get(f"{API}/customers")
+        assert r.status_code == 200
+        assert not any(c["id"] == primary_cid for c in r.json())
+
+        # And direct GET should be 404
+        r = s.get(f"{API}/customers/{primary_cid}")
+        assert r.status_code == 404
+
+
+# ---------------------------------------------------------------------------
+# Catalog CRUD
+# ---------------------------------------------------------------------------
+class TestCatalog:
+    def test_catalog_crud(self, auth_client):
+        r = auth_client.post(f"{API}/catalog", json={
+            "name": "TEST_Consulting Hour", "unit_price_cents": 15000, "tax_percent": 0
+        })
+        assert r.status_code == 200
+        item = r.json()
+        iid = item["id"]
+        assert item["unit_price_cents"] == 15000
+        assert "_id" not in item
+
+        r = auth_client.get(f"{API}/catalog")
+        assert r.status_code == 200 and any(x["id"] == iid for x in r.json())
+
+        r = auth_client.patch(f"{API}/catalog/{iid}", json={
+            "name": "TEST_Consulting Hour v2", "unit_price_cents": 20000, "tax_percent": 5
+        })
+        assert r.status_code == 200
+        assert r.json()["unit_price_cents"] == 20000
+
+        r = auth_client.delete(f"{API}/catalog/{iid}")
+        assert r.status_code == 200
+
+
+# ---------------------------------------------------------------------------
+# Invoices lifecycle (uses a fresh business so we can test FREE plan limit cleanly)
+# ---------------------------------------------------------------------------
+class TestInvoicesLifecycle:
+    def _make_customer(self, s):
+        r = s.post(f"{API}/customers", json={"name": "TEST_Cust_Inv"})
+        assert r.status_code == 200
+        return r.json()["id"]
+
+    def test_full_invoice_lifecycle(self, fresh_business):
+        s = fresh_business["session"]
+        cid = self._make_customer(s)
+
+        # Create invoice #1 - subtotal 200 + 10% tax = 220, minus 20 fixed discount = 200
+        payload = {
+            "customer_id": cid,
+            "line_items": [
+                {"name": "Item A", "quantity": 2, "unit_price_cents": 10000, "tax_percent": 10}
+            ],
+            "discount_type": "FIXED",
+            "discount_value": 2000,  # $20 off
+        }
+        r = s.post(f"{API}/invoices", json=payload)
+        assert r.status_code == 200, r.text
+        inv1 = r.json()
+        assert inv1["number"].startswith("INV-")
+        assert inv1["number"].endswith("0001")
+        # 2 * 10000 = 20000 subtotal, tax = 2000, discount = 2000 -> total = 20000
+        assert inv1["subtotal_cents"] == 20000
+        assert inv1["tax_total_cents"] == 2000
+        assert inv1["discount_cents"] == 2000
+        assert inv1["total_cents"] == 20000
+        assert inv1["status"] == "DRAFT"
+        assert "_id" not in inv1
+
+        # Send (DRAFT -> SENT)
+        r = s.post(f"{API}/invoices/{inv1['id']}/send")
+        assert r.status_code == 200
+        assert r.json()["status"] == "SENT"
+        assert r.json()["sent_at"]
+
+        # Duplicate (should become INV-0002 DRAFT)
+        r = s.post(f"{API}/invoices/{inv1['id']}/duplicate")
+        assert r.status_code == 200
+        inv_dup = r.json()
+        assert inv_dup["status"] == "DRAFT"
+        assert inv_dup["number"].endswith("0002")
+
+        # Partial payment on inv1
+        r = s.post(f"{API}/invoices/{inv1['id']}/mark-paid", json={"amount_cents": 5000, "method": "cash"})
+        assert r.status_code == 200
+        assert r.json()["status"] == "PARTIALLY_PAID"
+
+        # Full payment
+        r = s.post(f"{API}/invoices/{inv1['id']}/mark-paid", json={"method": "cash"})
+        assert r.status_code == 200
+        assert r.json()["status"] == "PAID"
+
+        # Void a PAID invoice must fail
+        r = s.post(f"{API}/invoices/{inv1['id']}/void")
+        assert r.status_code == 400
+
+        # Void the duplicate (DRAFT) should succeed
+        r = s.post(f"{API}/invoices/{inv_dup['id']}/void")
+        assert r.status_code == 200
+        assert r.json()["status"] == "VOID"
+
+        # List + status filter
+        r = s.get(f"{API}/invoices", params={"status_filter": "PAID"})
+        assert r.status_code == 200
+        assert all(inv["status"] == "PAID" for inv in r.json())
+        assert any(inv["id"] == inv1["id"] for inv in r.json())
+
+    def test_free_plan_lifetime_limit(self, fresh_business):
+        s = fresh_business["session"]
+        cid = self._make_customer(s)
+
+        payload = {
+            "customer_id": cid,
+            "line_items": [{"name": "Item", "quantity": 1, "unit_price_cents": 1000}],
+        }
+        # Fresh business already has whatever invoices from other test; use its OWN fresh instance
+        # So this fixture is unique per test - safe to create 5
+        created = 0
+        for i in range(5):
+            r = s.post(f"{API}/invoices", json=payload)
+            if r.status_code == 200:
+                created += 1
+            else:
+                break
+        assert created == 5, f"Expected to create 5, only created {created}"
+
+        # 6th must be blocked with 402 PLAN_LIMIT_REACHED
+        r = s.post(f"{API}/invoices", json=payload)
+        assert r.status_code == 402
+        detail = r.json().get("detail", {})
+        # detail may be dict
+        if isinstance(detail, dict):
+            assert detail.get("error") == "PLAN_LIMIT_REACHED"
+
+    def test_invoice_customer_from_other_business_rejected(self, auth_client, fresh_business):
+        # Create customer in primary business
+        r = auth_client.post(f"{API}/customers", json={"name": "TEST_XBiz"})
+        primary_cid = r.json()["id"]
+        # Fresh business tries to create invoice with that customer
+        s = fresh_business["session"]
+        r = s.post(f"{API}/invoices", json={
+            "customer_id": primary_cid,
+            "line_items": [{"name": "x", "quantity": 1, "unit_price_cents": 100}],
+        })
+        assert r.status_code == 400
+
+
+# ---------------------------------------------------------------------------
+# Dashboard
+# ---------------------------------------------------------------------------
+class TestDashboard:
+    def test_dashboard_summary_shape(self, auth_client):
+        r = auth_client.get(f"{API}/dashboard/summary")
+        assert r.status_code == 200
+        data = r.json()
+        for k in ["revenue_this_month_cents", "outstanding_cents", "overdue_cents",
+                  "chart_months", "plan_usage", "plan"]:
+            assert k in data, f"missing key {k}"
+        assert isinstance(data["chart_months"], list) and len(data["chart_months"]) == 6
+        assert "used" in data["plan_usage"] and "limit" in data["plan_usage"]
+
+
+# ---------------------------------------------------------------------------
+# AI extraction (graceful handling)
+# ---------------------------------------------------------------------------
+class TestAIExtract:
+    def test_no_key_returns_400(self, fresh_business):
+        # fresh_business has no anthropic key set
+        s = fresh_business["session"]
+        r = s.post(f"{API}/ai/extract-invoice", json={"text": "Invoice Acme for 5 hours @ $95"})
+        assert r.status_code == 400
+        assert "Anthropic" in r.json().get("detail", "")
+
+    def test_invalid_key_returns_502(self, fresh_business):
+        s = fresh_business["session"]
+        # Set a fake key
+        r = s.patch(f"{API}/settings", json={"anthropic_api_key": "sk-ant-invalid-key-for-test"})
+        assert r.status_code == 200
+        # Now call extract; should not crash, should return 502
+        r = s.post(f"{API}/ai/extract-invoice", json={"text": "Invoice Acme for 5 hours @ $95"})
+        assert r.status_code == 502, f"expected 502, got {r.status_code} {r.text}"

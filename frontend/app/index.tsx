@@ -1,30 +1,21 @@
-import { Text, View, StyleSheet, Image } from "react-native";
+import { ActivityIndicator, StyleSheet, View } from "react-native";
 
-const EXPO_PUBLIC_BACKEND_URL = process.env.EXPO_PUBLIC_BACKEND_URL;
+import { colors } from "@/src/lib/theme";
 
 export default function Index() {
-  console.log(EXPO_PUBLIC_BACKEND_URL, "EXPO_PUBLIC_BACKEND_URL");
-
+  // AuthProvider handles route redirects. Render a spinner while it bootstraps.
   return (
-    <View style={styles.container}>
-      <Image
-        source={require("../assets/images/app-image.png")}
-        style={styles.image}
-      />
+    <View style={styles.wrap}>
+      <ActivityIndicator size="large" color={colors.brand} />
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
+  wrap: {
     flex: 1,
-    backgroundColor: "#0c0c0c",
+    backgroundColor: colors.surface,
     alignItems: "center",
     justifyContent: "center",
-  },
-  image: {
-    width: "100%",
-    height: "100%",
-    resizeMode: "contain",
   },
 });

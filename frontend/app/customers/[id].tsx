@@ -1,0 +1,142 @@
+import { Feather } from "@expo/vector-icons";
+import { useLocalSearchParams, useRouter } from "expo-router";
+import React, { useCallback, useEffect, useState } from "react";
+import {
+  ActivityIndicator,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
+} from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
+
+import { Card, EmptyState } from "@/src/components/Card";
+import { StatusPill } from "@/src/components/StatusPill";
+import { api } from "@/src/lib/api";
+import { formatMoney } from "@/src/lib/money";
+import { colors, radius, spacing, typography } from "@/src/lib/theme";
+import type { Customer } from "@/src/lib/types";
+
+export default function CustomerDetail() {
+  const { id } = useLocalSearchParams<{ id: string }>();
+  const router = useRouter();
+  const [customer, setCustomer] = useState<Customer | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  const load = useCallback(async () => {
+    if (!id) return;
+    try {
+      const c = await api.get<Customer>(`/customers/${id}`);
+      setCustomer(c);
+    } finally {
+      setLoading(false);
+    }
+  }, [id]);
+
+  useEffect(() => { load(); }, [load]);
+
+  if (loading || !customer) {
+    return (
+      <SafeAreaView style={styles.safe} edges={["top"]}>
+        <ActivityIndicator style={{ marginTop: 60 }} size="large" color={colors.brand} />
+      </SafeAreaView>
+    );
+  }
+
+  return (
+    <SafeAreaView style={styles.safe} edges={["top", "bottom"]}>
+      <View style={styles.topbar}>
+        <TouchableOpacity testID="cust-back" onPress={() => router.back()}>
+          <Feather name="chevron-left" size={24} color={colors.onSurface} />
+        </TouchableOpacity>
+        <Text style={styles.topbarTitle}>{customer.name}</Text>
+        <View style={{ width: 24 }} />
+      </View>
+
+      <ScrollView contentContainerStyle={styles.scroll}>
+        <Card style={styles.hero}>
+          <View style={styles.avatar}>
+            <Text style={styles.avatarText}>{customer.name.slice(0, 1).toUpperCase()}</Text>
+          </View>
+          <Text style={styles.name}>{customer.name}</Text>
+          {customer.company ? <Text style={styles.muted}>{customer.company}</Text> : null}
+          {customer.email ? <Text style={styles.muted}>{customer.email}</Text> : null}
+          {customer.phone ? <Text style={styles.muted}>{customer.phone}</Text> : null}
+        </Card>
+
+        <Card style={styles.card}>
+          <Text style={styles.sectionLabel}>Lifetime revenue</Text>
+          <Text style={styles.bigAmount}>
+            {formatMoney(customer.lifetime_revenue_cents || 0, customer.invoices?.[0]?.currency || "USD")}
+          </Text>
+          <Text style={styles.muted}>Across {customer.invoices?.length || 0} invoices</Text>
+        </Card>
+
+        <Text style={styles.header}>Invoices</Text>
+        {!customer.invoices || customer.invoices.length === 0 ? (
+          <EmptyState title="No invoices yet" subtitle="Create the first invoice for this customer." />
+        ) : (
+          customer.invoices.map((inv) => (
+            <TouchableOpacity
+              key={inv.id}
+              testID={`cust-invoice-${inv.number}`}
+              style={styles.invRow}
+              onPress={() => router.push({ pathname: "/invoices/[id]", params: { id: inv.id } })}
+            >
+              <View style={{ flex: 1 }}>
+                <Text style={styles.invNumber}>{inv.number}</Text>
+                <Text style={styles.muted}>{inv.issue_date}</Text>
+              </View>
+              <View style={{ alignItems: "flex-end", gap: 4 }}>
+                <Text style={styles.invAmount}>{formatMoney(inv.total_cents, inv.currency)}</Text>
+                <StatusPill status={inv.status} />
+              </View>
+            </TouchableOpacity>
+          ))
+        )}
+      </ScrollView>
+    </SafeAreaView>
+  );
+}
+
+const styles = StyleSheet.create({
+  safe: { flex: 1, backgroundColor: colors.surface },
+  topbar: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.md,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.divider,
+  },
+  topbarTitle: { fontSize: typography.lg, fontWeight: "500", color: colors.onSurface },
+  scroll: { padding: spacing.lg },
+  hero: { alignItems: "center", padding: spacing.xl, marginBottom: spacing.md },
+  avatar: {
+    width: 64, height: 64, borderRadius: 32,
+    backgroundColor: colors.brandTertiary,
+    alignItems: "center", justifyContent: "center",
+    marginBottom: spacing.md,
+  },
+  avatarText: { color: colors.brand, fontSize: 24, fontWeight: "600" },
+  name: { fontSize: 22, fontWeight: "600", color: colors.onSurface, marginBottom: 4 },
+  muted: { fontSize: typography.base, color: colors.muted, marginTop: 2 },
+  card: { marginBottom: spacing.md },
+  sectionLabel: { fontSize: 11, fontWeight: "500", color: colors.muted, textTransform: "uppercase", letterSpacing: 0.5 },
+  bigAmount: { fontSize: 32, fontWeight: "600", color: colors.onSurface, marginTop: 4, letterSpacing: -0.5 },
+  header: { fontSize: typography.lg, fontWeight: "500", color: colors.onSurface, marginBottom: spacing.md, marginTop: spacing.sm },
+  invRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: colors.surfaceSecondary,
+    borderRadius: radius.md,
+    padding: spacing.lg,
+    borderWidth: 1,
+    borderColor: colors.border,
+    marginBottom: spacing.sm,
+  },
+  invNumber: { fontSize: typography.lg, fontWeight: "500", color: colors.onSurface },
+  invAmount: { fontSize: typography.lg, fontWeight: "500", color: colors.onSurface },
+});

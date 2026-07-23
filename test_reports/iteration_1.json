@@ -1,0 +1,67 @@
+{
+  "summary": "InvoiceAI iteration 1 - Backend: 19/19 pytest tests passing (100%) after working around a bug where Pydantic EmailStr rejects the `.test` TLD (documented). Frontend: sign-up -> onboarding -> dashboard -> new invoice -> settings flows all render and navigate correctly at 390x844 mobile viewport. AI mode correctly displays the 'Add your Anthropic API key in Settings' warning. AI extract endpoint returns graceful 400 with no key and 502 with an invalid key (no crash). Business isolation, invoice numbering (INV-0001+), totals engine (subtotal/tax/discount), status transitions (DRAFT->SENT->PARTIALLY_PAID->PAID), void guard against PAID, duplicate invoice, FREE plan lifetime limit (5 invoices, 6th blocked with 402 PLAN_LIMIT_REACHED), dashboard summary shape, and _id-never-exposed all verified. Two React Native Web deprecation warnings observed (shadow*, pointerEvents) - non-blocking.",
+  "backend_issues": {
+    "critical": [
+      {
+        "endpoint": "POST /api/auth/register & /api/auth/login",
+        "issue": "Pydantic EmailStr (email-validator lib) rejects the `.test` TLD as 'special-use or reserved' with HTTP 422. This directly contradicts /app/memory/test_credentials.md which prescribes qa@invoiceai.test. Either update the test credentials file to a valid domain (e.g. qa@invoiceai.example.com) OR relax the validator (email-validator has an option to allow special-use domains). Reproduction: POST /api/auth/register {\"email\":\"qa@invoiceai.test\",\"password\":\"Password123!\",\"business_name\":\"QA\"} -> 422.",
+        "priority": "HIGH"
+      }
+    ],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {
+        "screen": "global (Expo Web)",
+        "issues": [
+          "React Native Web deprecation warning: 'shadow*' style props are deprecated - use 'boxShadow' (visible on almost every screen)",
+          "React Native Web deprecation warning: props.pointerEvents is deprecated - use style.pointerEvents"
+        ]
+      }
+    ],
+    "react_native_issues": [
+      {
+        "component": "shadow* style props",
+        "issue": "Deprecated `shadow*` style props used somewhere in the theme/component styles. RNW recommends `boxShadow`. Console warning fires on load. Search StyleSheet.create blocks for shadowColor/shadowOffset/shadowOpacity/shadowRadius and migrate."
+      },
+      {
+        "component": "pointerEvents prop",
+        "issue": "Deprecated `pointerEvents` prop is used (should be `style={{ pointerEvents: 'none' }}` instead of `pointerEvents='none'`)."
+      }
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/conftest.py",
+    "/app/backend/tests/test_backend.py",
+    "/app/test_reports/pytest/pytest_results.xml"
+  ],
+  "action_items": [
+    "PRIMARY: Fix email validation mismatch. Either (a) change test_credentials.md to qa@invoiceai.example.com and update onboarding docs, or (b) configure email-validator with `check_deliverability=False` / allow_special_use=True so `.test` addresses are accepted. Right now no automated test client using the documented credential can sign up or sign in.",
+    "Migrate `shadow*` StyleSheet keys to `boxShadow` for RN Web compatibility (grep for shadowColor/shadowOffset/shadowOpacity/shadowRadius under /app/frontend).",
+    "Migrate `pointerEvents` prop usage into `style.pointerEvents`.",
+    "Verify the following testIDs referenced in the review request actually exist on the /invoices/new (manual mode) and dashboard screens; if not present, add them for regression testability: `save-invoice-btn`, `invoice-pick-customer`, `invoice-add-line`, `ai-generate-draft`, `dashboard-plan-usage`, `dashboard-revenue-month`. During UI walk-through the visual elements are all present but the testIDs above were not found."
+  ],
+  "critical_code_review_comments": [
+    "server.py is ~950 lines - approaching the 700-line split threshold; consider splitting into modules (auth.py, invoices.py, customers.py, catalog.py, ai.py) for maintainability.",
+    "AI extraction (POST /api/ai/extract-invoice) forwards the user-provided anthropic key straight from Mongo into an AsyncAnthropic client without any masking or length check; consider validating format (`sk-ant-`) before making the network call to avoid a slow 401 round-trip.",
+    "compute_totals uses `round()` for tax which is banker's rounding in Python 3; for money you may want to switch to Decimal + ROUND_HALF_UP to avoid ambiguous cent totals.",
+    "invoice number generation uses find_one_and_update $inc which is atomic - good.",
+    "_id is stripped in every response via clean() - verified never leaks."
+  ],
+  "updated_files": [
+    "/app/backend/tests/conftest.py (created)",
+    "/app/backend/tests/test_backend.py (created)"
+  ],
+  "success_rate": {
+    "backend": "100% (19/19 pytest cases pass, using @example.com email domain)",
+    "frontend": "~90% (end-to-end sign-up->onboarding->dashboard->new-invoice->settings flow works; a few testIDs referenced in review not found)"
+  },
+  "seed_data_creation": "Multiple TEST_-prefixed customers/catalog items/invoices created during pytest run in the QA business (qa@invoiceai.example.com) plus several disposable TEST_* businesses. Data is namespaced with TEST_ prefix for easy identification; can be dropped from Mongo when the FREE-plan invoice quota impacts future runs. NOTE: The QA business already has ~5 lifetime invoices after this run, so subsequent invoice-create tests against it will hit the FREE plan cap - use `fresh_business` fixture (already implemented in conftest.py) for invoice creation.",
+  "retest_needed": true,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Use `@example.com` (or any real TLD) for test emails - `.test` is rejected by Pydantic EmailStr with 422. Backend public URL is https://smart-invoice-dev.preview.emergentagent.com. The QA primary business already has 5 invoices - if you re-test invoice creation on that user, expect 402 PLAN_LIMIT_REACHED unless you upgrade its plan via PATCH /api/settings {\"plan\":\"PRO\"} or use a fresh business. Reuse /app/backend/tests/test_backend.py for regression.",
+  "rca_of_issue": "Root cause of the auth-testing blocker: Pydantic v2 uses email-validator >=2.0 which by default enforces RFC-2606 special-use TLDs (.test, .example, .invalid, .localhost) as non-deliverable. The RegisterIn/LoginIn models use `EmailStr` which invokes this validator strictly, so `qa@invoiceai.test` (as documented in /app/memory/test_credentials.md) fails at request parsing with 422 before reaching business logic. Mitigation options: (1) change memory doc to qa@invoiceai.example.com or qa@invoiceai.local (also blocked - use example.com), (2) install `email-validator` with `check_deliverability=False` via a custom EmailStr subtype, or (3) accept a plain `str` and validate with a regex. Option (1) is safest; option (2) matches user intent better."
+}
