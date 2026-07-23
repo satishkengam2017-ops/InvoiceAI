@@ -1,0 +1,29 @@
+{
+  "summary": "Iteration 2 — 100% pass. Backend: 20/20 pytest green (added new regression covering /api/plans STARTER + PRO Stripe URLs from env). Frontend: all 3 user-reported bug fixes verified on the Expo web preview at 390x844. (1) Settings plan cards render cleanly — Free/Starter/Pro each on a single-line label (label height 18px, no per-character wrap), Free shows 'Current plan' pill, Starter+Pro show 'Upgrade' pill + 'I've paid — activate' link on their own action row below the header. (2) invoice-share-btn on web opens a new tab (no unhandled JS error). (3) 'Download PDF' row (testID invoice-download-pdf) appears in the More bottom-sheet ABOVE Duplicate (y=590 vs y=642) and opens a printable new tab. Regressions: signup+onboarding, manual invoice create (customer + line item saved), /api/health, /api/plans, FREE-plan 6th invoice returns 402, PATCH /api/settings rejects invalid plan — all green.",
+  "backend_issues": { "critical": [], "minor": [] },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_backend.py",
+    "/app/backend/tests/conftest.py",
+    "/app/test_reports/pytest/pytest_results.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "Minor: initial page load emits one 401 from an unauthenticated /auth/me probe before the token is loaded. Not a bug (AuthContext bootstraps state) but you could suppress the console noise by skipping the /me call when no token is present.",
+    "invoicePdf.ts safely escapes user-controlled fields — good XSS hygiene for the printable HTML."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_backend.py (added TestBusiness.test_plans_returns_both_stripe_urls_from_env — asserts STARTER url == https://buy.stripe.com/00w5kw7q56P38E94yz87K01 and PRO url == https://buy.stripe.com/7sYdR2fWB0qFg6Bc1187K02 and validates limits/scopes)"
+  ],
+  "success_rate": { "backend": "100% (20/20)", "frontend": "100% (3/3 bug fixes + all regressions)" },
+  "seed_data_creation": "Backend tests create isolated TEST_ businesses per case; QA user qa@invoiceai.example.com created via sign-up during backend test session and onboarded via UI during frontend test. One manual invoice created via the UI to exercise Share/Download PDF flows.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Web preview host is https://smart-invoice-dev.preview.emergentagent.com (from EXPO_PUBLIC_BACKEND_URL in /app/frontend/.env). The URL in the review_request note (ff3626c8-...) is stale; trust the .env. QA user (qa@invoiceai.example.com / Password123!) exists and is fully onboarded now. Sign-in testIDs are sign-in-email / sign-in-password / sign-in-submit (NOT signin-*). Bottom tabs use expo-router — easiest to navigate via URLs /settings, /invoices, /dashboard. Invoice bottom-sheet order (top→bottom): Download PDF, Duplicate, Void, Cancel.",
+  "rca_of_issue": "Bug 1 root cause was that the previous Settings screen put Upgrade + activate + label + price on a single horizontal row using flex-wrap, which at 390px width forced the 'Starter'/'Pro' label to wrap character-per-line. Fix restructured the plan card into two rows (planHeader row: label+desc | price; planActionsRow: Upgrade + activate). Bug 2/3 root cause was that expo-sharing has no web transport, so on Platform.OS === 'web' the share() and new downloadPdf() call window.open + doc.write(html) + window.print(), which produces a real printable/save-as-PDF flow inside any modern browser."
+}

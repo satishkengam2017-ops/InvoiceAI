@@ -254,17 +254,21 @@ export default function Settings() {
                   testID={`plan-${p.key.toLowerCase()}`}
                   style={[styles.planRow, active && styles.planRowActive]}
                 >
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.planLabel}>{p.label}</Text>
-                    <Text style={styles.planDesc}>{p.description}</Text>
+                  <View style={styles.planHeader}>
+                    <View style={{ flex: 1, marginRight: spacing.md }}>
+                      <Text style={styles.planLabel}>{p.label}</Text>
+                      <Text style={styles.planDesc}>{p.description}</Text>
+                    </View>
+                    <Text style={styles.planPrice}>{p.price_label}</Text>
                   </View>
-                  <Text style={styles.planPrice}>{p.price_label}</Text>
+
                   {active ? (
-                    <View style={styles.planCheck}>
-                      <Feather name="check" size={16} color={colors.brand} />
+                    <View style={styles.currentBadge}>
+                      <Feather name="check" size={14} color={colors.brand} />
+                      <Text style={styles.currentBadgeText}>Current plan</Text>
                     </View>
                   ) : isPaid ? (
-                    <View style={styles.planActions}>
+                    <View style={styles.planActionsRow}>
                       <TouchableOpacity
                         testID={`plan-${p.key.toLowerCase()}-upgrade`}
                         style={styles.upgradeBtn}
@@ -272,7 +276,7 @@ export default function Settings() {
                         activeOpacity={0.85}
                         disabled={savingPlan}
                       >
-                        <Feather name="external-link" size={12} color={colors.onBrandPrimary} />
+                        <Feather name="external-link" size={14} color={colors.onBrandPrimary} />
                         <Text style={styles.upgradeBtnText}>Upgrade</Text>
                       </TouchableOpacity>
                       <TouchableOpacity
@@ -285,14 +289,16 @@ export default function Settings() {
                       </TouchableOpacity>
                     </View>
                   ) : (
-                    <TouchableOpacity
-                      testID={`plan-${p.key.toLowerCase()}-downgrade`}
-                      onPress={() => switchPlan(p.key)}
-                      disabled={savingPlan}
-                      style={styles.activateBtn}
-                    >
-                      <Text style={styles.activateBtnText}>Switch</Text>
-                    </TouchableOpacity>
+                    <View style={styles.planActionsRow}>
+                      <TouchableOpacity
+                        testID={`plan-${p.key.toLowerCase()}-downgrade`}
+                        onPress={() => switchPlan(p.key)}
+                        disabled={savingPlan}
+                        style={styles.downgradeBtn}
+                      >
+                        <Text style={styles.downgradeBtnText}>Switch to Free</Text>
+                      </TouchableOpacity>
+                    </View>
                   )}
                 </View>
               );
@@ -357,9 +363,6 @@ const styles = StyleSheet.create({
   progressBar: { height: 6, backgroundColor: colors.surfaceTertiary, borderRadius: 3, overflow: "hidden" },
   progressFill: { height: 6, backgroundColor: colors.brand, borderRadius: 3 },
   planRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: spacing.md,
     padding: spacing.md,
     borderRadius: radius.md,
     borderWidth: 1,
@@ -368,24 +371,52 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surface,
   },
   planRowActive: { borderColor: colors.brand, backgroundColor: colors.brandTertiary },
+  planHeader: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    justifyContent: "space-between",
+  },
   planLabel: { fontSize: typography.lg, fontWeight: "500", color: colors.onSurface },
   planDesc: { fontSize: typography.sm, color: colors.muted, marginTop: 2 },
-  planPrice: { fontSize: typography.lg, fontWeight: "500", color: colors.onSurface },
-  planCheck: {
-    width: 24, height: 24, borderRadius: 12,
-    backgroundColor: colors.brandTertiary, alignItems: "center", justifyContent: "center",
+  planPrice: { fontSize: typography.lg, fontWeight: "600", color: colors.onSurface },
+  currentBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    marginTop: spacing.sm,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 4,
+    borderRadius: radius.pill,
+    backgroundColor: colors.brandTertiary,
+    alignSelf: "flex-start",
   },
-  planActions: { alignItems: "flex-end", gap: 4 },
+  currentBadgeText: { color: colors.brand, fontSize: 12, fontWeight: "500" },
+  planActionsRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.md,
+    marginTop: spacing.md,
+  },
   upgradeBtn: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 4,
+    gap: 6,
     backgroundColor: colors.brand,
-    paddingHorizontal: spacing.md,
-    paddingVertical: 6,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.sm,
     borderRadius: radius.pill,
+    minHeight: 36,
   },
-  upgradeBtnText: { color: colors.onBrandPrimary, fontSize: typography.sm, fontWeight: "500" },
-  activateBtn: { paddingHorizontal: spacing.sm, paddingVertical: 2 },
-  activateBtnText: { color: colors.brand, fontSize: 11, fontWeight: "500" },
+  upgradeBtnText: { color: colors.onBrandPrimary, fontSize: typography.base, fontWeight: "500" },
+  activateBtn: { paddingVertical: 6 },
+  activateBtnText: { color: colors.brand, fontSize: typography.sm, fontWeight: "500" },
+  downgradeBtn: {
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    borderRadius: radius.pill,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.surfaceSecondary,
+  },
+  downgradeBtnText: { color: colors.onSurfaceTertiary, fontSize: typography.sm, fontWeight: "500" },
 });

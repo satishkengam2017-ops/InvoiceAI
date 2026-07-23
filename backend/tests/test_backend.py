@@ -84,6 +84,22 @@ class TestBusiness:
         r = auth_client.patch(f"{API}/settings", json={"plan": "ENTERPRISE"})
         assert r.status_code == 400
 
+    def test_plans_returns_both_stripe_urls_from_env(self, auth_client):
+        """Regression: /api/plans must expose the STARTER and PRO Stripe upgrade URLs from backend env."""
+        r = auth_client.get(f"{API}/plans")
+        assert r.status_code == 200
+        body = r.json()
+        assert "current" in body and "plans" in body and "usage" in body
+        by_key = {p["key"]: p for p in body["plans"]}
+        assert set(by_key.keys()) == {"FREE", "STARTER", "PRO"}
+        assert by_key["FREE"]["upgrade_url"] is None
+        assert by_key["STARTER"]["upgrade_url"] == "https://buy.stripe.com/00w5kw7q56P38E94yz87K01"
+        assert by_key["PRO"]["upgrade_url"] == "https://buy.stripe.com/7sYdR2fWB0qFg6Bc1187K02"
+        # Sanity: FREE plan is 5 lifetime; STARTER=10/mo; PRO=50/mo
+        assert by_key["FREE"]["limit"] == 5 and by_key["FREE"]["scope"] == "lifetime"
+        assert by_key["STARTER"]["limit"] == 10 and by_key["STARTER"]["scope"] == "month"
+        assert by_key["PRO"]["limit"] == 50 and by_key["PRO"]["scope"] == "month"
+
     def test_settings_updates_anthropic_key_masked(self, auth_client):
         r = auth_client.patch(f"{API}/settings", json={
             "anthropic_api_key": "sk-ant-DUMMY-not-a-real-key",

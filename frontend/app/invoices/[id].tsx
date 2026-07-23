@@ -66,28 +66,98 @@ export default function InvoiceDetail() {
   const isPaid = invoice.status === "PAID";
   const isVoid = invoice.status === "VOID";
 
+  const openHtmlInNewTab = (html: string, autoPrint: boolean) => {
+    if (typeof window === "undefined") return false;
+    const win = window.open("", "_blank");
+    if (!win) {
+      Alert.alert("Popup blocked", "Please allow popups for this site, then try again.");
+      return false;
+    }
+    win.document.open();
+    win.document.write(html);
+    win.document.close();
+    if (autoPrint) {
+      // Give the browser a moment to lay out before triggering the print dialog.
+      setTimeout(() => { try { win.focus(); win.print(); } catch { /* ignore */ } }, 400);
+    }
+    return true;
+  };
+
+  const markSentIfDraft = async () => {
+    if (invoice?.status === "DRAFT") {
+      try {
+        const updated = await api.post<Invoice>(`/invoices/${invoice.id}/send`, {});
+        setInvoice(updated);
+      } catch { /* ignore */ }
+    }
+  };
+
   const share = async () => {
+    if (!invoice) return;
     setBusy(true);
     try {
       const html = invoiceHtml(invoice, business as Business);
-      const { uri } = await Print.printToFileAsync({ html, base64: false });
-      const canShare = await Sharing.isAvailableAsync();
-      if (canShare) {
-        await Sharing.shareAsync(uri, {
-          mimeType: "application/pdf",
-          dialogTitle: `Send ${invoice.number}`,
-          UTI: "com.adobe.pdf",
-        });
+      if (Platform.OS === "web") {
+        // Prefer Web Share API on mobile browsers; fall back to opening a printable tab.
+        const nav = typeof navigator !== "undefined" ? (navigator as Navigator & { share?: (data: { title?: string; text?: string; url?: string }) => Promise<void> }) : undefined;
+        const payUrl = invoice.stripe_payment_url;
+        const text = `Invoice ${invoice.number} from ${business?.name}: ${formatMoney(invoice.total_cents, invoice.currency)}${payUrl ? ` — Pay: ${payUrl}` : ""}`;
+        if (nav?.share) {
+          try {
+            await nav.share({ title: `Invoice ${invoice.number}`, text, url: payUrl || undefined });
+            await markSentIfDraft();
+            return;
+          } catch {
+            // user cancelled — fall through to print
+          }
+        }
+        openHtmlInNewTab(html, true);
       } else {
-        Alert.alert("Sharing unavailable", "Sharing isn't available on this device.");
+        const { uri } = await Print.printToFileAsync({ html, base64: false });
+        const canShare = await Sharing.isAvailableAsync();
+        if (canShare) {
+          await Sharing.shareAsync(uri, {
+            mimeType: "application/pdf",
+            dialogTitle: `Send ${invoice.number}`,
+            UTI: "com.adobe.pdf",
+          });
+        } else {
+          Alert.alert("Sharing unavailable", "Sharing isn't available on this device.");
+        }
       }
-      // Mark as SENT if it was DRAFT
-      if (invoice.status === "DRAFT") {
-        const updated = await api.post<Invoice>(`/invoices/${invoice.id}/send`, {});
-        setInvoice(updated);
-      }
+      await markSentIfDraft();
     } catch (e) {
       Alert.alert("Share failed", e instanceof Error ? e.message : "Unknown error");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const downloadPdf = async () => {
+    if (!invoice) return;
+    setBusy(true);
+    try {
+      const html = invoiceHtml(invoice, business as Business);
+      if (Platform.OS === "web") {
+        // Open a printable tab and immediately trigger the print dialog so the user
+        // can "Save as PDF" from the browser (Chrome/Safari/Firefox all support this).
+        openHtmlInNewTab(html, true);
+      } else {
+        const { uri } = await Print.printToFileAsync({ html, base64: false });
+        const canShare = await Sharing.isAvailableAsync();
+        if (canShare) {
+          await Sharing.shareAsync(uri, {
+            mimeType: "application/pdf",
+            dialogTitle: `Save ${invoice.number}.pdf`,
+            UTI: "com.adobe.pdf",
+          });
+        } else {
+          Alert.alert("Download unavailable", "PDF download isn't available on this device.");
+        }
+      }
+      setShowActions(false);
+    } catch (e) {
+      Alert.alert("Download failed", e instanceof Error ? e.message : "Unknown error");
     } finally {
       setBusy(false);
     }
@@ -278,6 +348,10 @@ export default function InvoiceDetail() {
       <Modal visible={showActions} transparent animationType="fade" onRequestClose={() => setShowActions(false)}>
         <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={() => setShowActions(false)}>
           <View style={styles.actionsSheet}>
+            <TouchableOpacity testID="invoice-download-pdf" style={styles.actionRow} onPress={downloadPdf} disabled={busy}>
+              <Feather name="download" size={18} color={colors.onSurface} />
+              <Text style={styles.actionRowText}>Download PDF</Text>
+            </TouchableOpacity>
             <TouchableOpacity testID="invoice-duplicate" style={styles.actionRow} onPress={duplicate}>
               <Feather name="copy" size={18} color={colors.onSurface} />
               <Text style={styles.actionRowText}>Duplicate</Text>
