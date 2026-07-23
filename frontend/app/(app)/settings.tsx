@@ -10,8 +10,7 @@ import {
   Text,
   TouchableOpacity,
   View,
-} from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
+} from "react-native";import { SafeAreaView } from "react-native-safe-area-context";
 
 import { Button } from "@/src/components/Button";
 import { Card } from "@/src/components/Card";
@@ -153,6 +152,13 @@ export default function Settings() {
     const params = new URLSearchParams({ client_reference_id: clientRef });
     if (user?.email) params.append("prefilled_email", user.email);
     const url = `${p.upgrade_url}?${params.toString()}`;
+
+    // Alert.alert with multiple buttons is a no-op on react-native-web; open
+    // Stripe directly on web, otherwise show a confirmation dialog on native.
+    if (Platform.OS === "web") {
+      Linking.openURL(url).catch(() => Alert.alert("Error", "Could not open the payment page."));
+      return;
+    }
 
     Alert.alert(
       `Upgrade to ${p.label}`,
@@ -410,8 +416,6 @@ const styles = StyleSheet.create({
     minHeight: 36,
   },
   upgradeBtnText: { color: colors.onBrandPrimary, fontSize: typography.base, fontWeight: "500" },
-  activateBtn: { paddingVertical: 6 },
-  activateBtnText: { color: colors.brand, fontSize: typography.sm, fontWeight: "500" },
   downgradeBtn: {
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,

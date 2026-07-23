@@ -37,7 +37,7 @@ Every tenant-scoped route resolves the business via JWT and filters queries by `
 - **FREE**: 5 invoices lifetime
 - **STARTER**: $1/mo, 10 invoices/month
 - **PRO**: $5/mo, 50 invoices/month
-- Plan is user-selectable in Settings (no payment collection built in MVP — user pastes a Stripe subscription/payment URL on invoices instead).
+- **Automatic activation via Stripe webhook**: Tapping Upgrade opens Stripe Payment Link with `client_reference_id=<PLAN>.<business_id>` + prefilled email. On `checkout.session.completed`, `POST /api/webhooks/stripe` verifies the HMAC-SHA256 signature (`STRIPE_WEBHOOK_SECRET`), dedupes by event id, and flips `business.plan`. Cancellations (`customer.subscription.deleted`) downgrade back to FREE via the stored `stripe_customer_id`. `PATCH /api/settings` still supports manual plan changes as a fallback/admin path.
 
 ## Screens (Expo Router)
 - `(auth)/sign-in.tsx`, `(auth)/sign-up.tsx`
