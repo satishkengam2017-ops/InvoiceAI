@@ -3,7 +3,6 @@
   "main": "expo-router/entry",
   "version": "1.0.0",
   "scripts": {
-    "preinstall": "./scripts/cmd-guard.js --preinstall",
     "start": "expo start",
     "reset-project": "node ./scripts/reset-project.js",
     "android": "expo start --android",
@@ -21,6 +20,7 @@
     "expo": "54.0.36",
     "expo-blur": "15.0.8",
     "expo-constants": "18.0.13",
+    "expo-file-system": "~19.0.23",
     "expo-font": "14.0.12",
     "expo-haptics": "15.0.8",
     "expo-image": "3.0.11",

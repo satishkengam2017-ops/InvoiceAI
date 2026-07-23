@@ -10,7 +10,7 @@
     "newArchEnabled": true,
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.emergent.smartinvoicedev.gavygf"
+      "bundleIdentifier": "com.invoiceai.app"
     },
     "android": {
       "adaptiveIcon": {
@@ -18,7 +18,7 @@
         "backgroundColor": "#000000"
       },
       "edgeToEdgeEnabled": true,
-      "package": "com.emergent.smartinvoicedev.gavygf"
+      "package": "com.invoiceai.app"
     },
     "web": {
       "bundler": "metro",

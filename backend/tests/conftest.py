@@ -7,7 +7,7 @@ import pytest
 # Read backend URL from frontend .env (source of truth for public URL)
 BASE_URL = os.environ.get(
     "EXPO_PUBLIC_BACKEND_URL",
-    "https://smart-invoice-dev.preview.emergentagent.com",
+    "http://localhost:8000",
 ).rstrip("/")
 API = f"{BASE_URL}/api"
 
