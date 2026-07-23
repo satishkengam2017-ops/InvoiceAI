@@ -3,6 +3,7 @@ import React, { useEffect, useState } from "react";
 import {
   Alert,
   KeyboardAvoidingView,
+  Linking,
   Platform,
   ScrollView,
   StyleSheet,
@@ -18,13 +19,24 @@ import { Input } from "@/src/components/Input";
 import { useAuth } from "@/src/context/AuthContext";
 import { api } from "@/src/lib/api";
 import { colors, radius, spacing, typography } from "@/src/lib/theme";
-import type { Business, DashboardSummary, Plan } from "@/src/lib/types";
+import type { Business, Plan } from "@/src/lib/types";
 
-const PLANS: { key: Plan; label: string; price: string; desc: string }[] = [
-  { key: "FREE", label: "Free", price: "$0", desc: "5 invoices lifetime" },
-  { key: "STARTER", label: "Starter", price: "$1/mo", desc: "10 invoices per month" },
-  { key: "PRO", label: "Pro", price: "$5/mo", desc: "50 invoices per month" },
-];
+type PlanInfo = {
+  key: Plan;
+  label: string;
+  price_label: string;
+  description: string;
+  limit: number;
+  scope: string;
+  is_current: boolean;
+  upgrade_url: string | null;
+};
+
+type PlansResponse = {
+  current: Plan;
+  plans: PlanInfo[];
+  usage: { used: number; limit: number; scope: string; over: boolean };
+};
 
 export default function Settings() {
   const { business, refreshBusiness, signOut, user } = useAuth();
@@ -38,7 +50,15 @@ export default function Settings() {
   const [saving, setSaving] = useState(false);
   const [savingKey, setSavingKey] = useState(false);
   const [savingPlan, setSavingPlan] = useState(false);
-  const [usage, setUsage] = useState<DashboardSummary["plan_usage"] | null>(null);
+  const [plansData, setPlansData] = useState<PlansResponse | null>(null);
+
+  const loadPlans = async () => {
+    try {
+      const p = await api.get<PlansResponse>("/plans");
+      setPlansData(p);
+      setPlan(p.current);
+    } catch { /* ignore */ }
+  };
 
   useEffect(() => {
     if (business) {
@@ -52,9 +72,7 @@ export default function Settings() {
   }, [business]);
 
   useEffect(() => {
-    api.get<DashboardSummary>("/dashboard/summary")
-      .then((s) => setUsage(s.plan_usage))
-      .catch(() => {});
+    loadPlans();
   }, [business]);
 
   const saveProfile = async () => {
@@ -109,11 +127,35 @@ export default function Settings() {
       await api.patch("/settings", { plan: newPlan });
       setPlan(newPlan);
       await refreshBusiness();
+      await loadPlans();
     } catch (e) {
       Alert.alert("Error", e instanceof Error ? e.message : "Failed to change plan");
     } finally {
       setSavingPlan(false);
     }
+  };
+
+  const openUpgrade = async (p: PlanInfo) => {
+    if (!p.upgrade_url) {
+      Alert.alert(
+        "Upgrade unavailable",
+        `Payment link for the ${p.label} plan hasn't been configured yet. Please contact support.`
+      );
+      return;
+    }
+    Alert.alert(
+      `Upgrade to ${p.label}`,
+      `You'll be sent to Stripe to pay ${p.price_label}. After payment, come back and tap "I've paid — activate ${p.label}" to unlock your new limit.`,
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Open Stripe",
+          onPress: () => Linking.openURL(p.upgrade_url as string).catch(() =>
+            Alert.alert("Error", "Could not open the payment page.")
+          ),
+        },
+      ]
+    );
   };
 
   return (
@@ -193,41 +235,71 @@ export default function Settings() {
           {/* Plan */}
           <Card style={styles.card}>
             <Text style={styles.sectionTitle}>Subscription plan</Text>
-            {usage ? (
+            {plansData?.usage ? (
               <View style={styles.usageBox}>
                 <Text style={styles.usageText}>
-                  {usage.used} / {usage.limit} invoices used this {usage.scope}
+                  {plansData.usage.used} / {plansData.usage.limit} invoices used this {plansData.usage.scope}
                 </Text>
                 <View style={styles.progressBar}>
-                  <View style={[styles.progressFill, { width: `${Math.min(100, (usage.used / usage.limit) * 100)}%` }]} />
+                  <View style={[styles.progressFill, { width: `${Math.min(100, (plansData.usage.used / plansData.usage.limit) * 100)}%` }]} />
                 </View>
               </View>
             ) : null}
-            {PLANS.map((p) => {
-              const active = p.key === plan;
+            {(plansData?.plans || []).map((p) => {
+              const active = p.is_current;
+              const isPaid = p.key !== "FREE";
               return (
-                <TouchableOpacity
+                <View
                   key={p.key}
                   testID={`plan-${p.key.toLowerCase()}`}
                   style={[styles.planRow, active && styles.planRowActive]}
-                  onPress={() => switchPlan(p.key)}
-                  activeOpacity={0.85}
-                  disabled={savingPlan}
                 >
                   <View style={{ flex: 1 }}>
                     <Text style={styles.planLabel}>{p.label}</Text>
-                    <Text style={styles.planDesc}>{p.desc}</Text>
+                    <Text style={styles.planDesc}>{p.description}</Text>
                   </View>
-                  <Text style={styles.planPrice}>{p.price}</Text>
+                  <Text style={styles.planPrice}>{p.price_label}</Text>
                   {active ? (
                     <View style={styles.planCheck}>
                       <Feather name="check" size={16} color={colors.brand} />
                     </View>
-                  ) : null}
-                </TouchableOpacity>
+                  ) : isPaid ? (
+                    <View style={styles.planActions}>
+                      <TouchableOpacity
+                        testID={`plan-${p.key.toLowerCase()}-upgrade`}
+                        style={styles.upgradeBtn}
+                        onPress={() => openUpgrade(p)}
+                        activeOpacity={0.85}
+                        disabled={savingPlan}
+                      >
+                        <Feather name="external-link" size={12} color={colors.onBrandPrimary} />
+                        <Text style={styles.upgradeBtnText}>Upgrade</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        testID={`plan-${p.key.toLowerCase()}-activate`}
+                        onPress={() => switchPlan(p.key)}
+                        disabled={savingPlan}
+                        style={styles.activateBtn}
+                      >
+                        <Text style={styles.activateBtnText}>I&apos;ve paid — activate</Text>
+                      </TouchableOpacity>
+                    </View>
+                  ) : (
+                    <TouchableOpacity
+                      testID={`plan-${p.key.toLowerCase()}-downgrade`}
+                      onPress={() => switchPlan(p.key)}
+                      disabled={savingPlan}
+                      style={styles.activateBtn}
+                    >
+                      <Text style={styles.activateBtnText}>Switch</Text>
+                    </TouchableOpacity>
+                  )}
+                </View>
               );
             })}
-            <Text style={styles.help}>Plan changes take effect immediately. Payment collection can be enabled by pasting your own Stripe subscription link above.</Text>
+            <Text style={styles.help}>
+              Upgrades open Stripe for a one-time or recurring charge. After paying, tap &quot;I&apos;ve paid — activate&quot; to unlock the new invoice limit. Automatic activation via webhook coming soon.
+            </Text>
           </Card>
 
           {/* Account */}
@@ -303,4 +375,17 @@ const styles = StyleSheet.create({
     width: 24, height: 24, borderRadius: 12,
     backgroundColor: colors.brandTertiary, alignItems: "center", justifyContent: "center",
   },
+  planActions: { alignItems: "flex-end", gap: 4 },
+  upgradeBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    backgroundColor: colors.brand,
+    paddingHorizontal: spacing.md,
+    paddingVertical: 6,
+    borderRadius: radius.pill,
+  },
+  upgradeBtnText: { color: colors.onBrandPrimary, fontSize: typography.sm, fontWeight: "500" },
+  activateBtn: { paddingHorizontal: spacing.sm, paddingVertical: 2 },
+  activateBtnText: { color: colors.brand, fontSize: 11, fontWeight: "500" },
 });

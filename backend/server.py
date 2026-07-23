@@ -262,6 +262,20 @@ PLAN_LIMITS = {
     "PRO": {"scope": "month", "limit": 50},
 }
 
+PLAN_META = {
+    "FREE":    {"label": "Free",    "price_cents": 0,   "price_label": "$0",     "description": "5 invoices lifetime"},
+    "STARTER": {"label": "Starter", "price_cents": 100, "price_label": "$1/mo",  "description": "10 invoices per month"},
+    "PRO":     {"label": "Pro",     "price_cents": 500, "price_label": "$5/mo",  "description": "50 invoices per month"},
+}
+
+
+def _plan_upgrade_url(plan: str) -> Optional[str]:
+    if plan == "STARTER":
+        return os.environ.get("STRIPE_STARTER_URL") or None
+    if plan == "PRO":
+        return os.environ.get("STRIPE_PRO_URL") or None
+    return None
+
 
 async def check_plan_limit(business_id: str, plan: str) -> dict:
     cfg = PLAN_LIMITS.get(plan, PLAN_LIMITS["FREE"])
@@ -273,6 +287,31 @@ async def check_plan_limit(business_id: str, plan: str) -> dict:
             {"business_id": business_id, "created_at_dt": {"$gte": month_start}}
         )
     return {"used": used, "limit": cfg["limit"], "scope": cfg["scope"], "over": used >= cfg["limit"]}
+
+
+# ---------------------------------------------------------------------------
+# Plans
+# ---------------------------------------------------------------------------
+@api.get("/plans")
+async def list_plans(ctx: dict = Depends(get_business)):
+    """Public plan catalog + current plan usage. Includes per-plan Stripe upgrade URLs."""
+    biz = ctx["business"]
+    current = biz.get("plan", "FREE")
+    plans = []
+    for key, meta in PLAN_META.items():
+        plans.append({
+            "key": key,
+            **meta,
+            "limit": PLAN_LIMITS[key]["limit"],
+            "scope": PLAN_LIMITS[key]["scope"],
+            "is_current": key == current,
+            "upgrade_url": _plan_upgrade_url(key),
+        })
+    return {
+        "current": current,
+        "plans": plans,
+        "usage": await check_plan_limit(biz["id"], current),
+    }
 
 
 # ---------------------------------------------------------------------------
