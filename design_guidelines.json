@@ -1,0 +1,227 @@
+{
+  "app_name": "InvoiceAI",
+  "personality": "1 iOS-Native Clean",
+  "personality_one_liner": "A fast, premium, and trustworthy invoicing tool that focuses on financial clarity and operational speed, completely avoiding generic AI aesthetics.",
+  "color": {
+    "surface": "#F7F7F5",
+    "onSurface": "#111110",
+    "surfaceSecondary": "#FFFFFF",
+    "onSurfaceSecondary": "#111110",
+    "surfaceTertiary": "#EAEAE8",
+    "onSurfaceTertiary": "#3E3E3C",
+    "surfaceInverse": "#111110",
+    "onSurfaceInverse": "#FFFFFF",
+    "brand": "#0D683A",
+    "brandPrimary": "#0D683A",
+    "onBrandPrimary": "#FFFFFF",
+    "brandSecondary": "#158C4F",
+    "onBrandSecondary": "#FFFFFF",
+    "brandTertiary": "#E6F3EB",
+    "onBrandTertiary": "#0D683A",
+    "success": "#0D683A",
+    "onSuccess": "#FFFFFF",
+    "warning": "#D97706",
+    "onWarning": "#FFFFFF",
+    "error": "#DC2626",
+    "onError": "#FFFFFF",
+    "info": "#4B5563",
+    "onInfo": "#FFFFFF",
+    "border": "#E5E5E5",
+    "borderStrong": "#CCCCCC",
+    "divider": "#EAEAE8",
+    "dark": {
+      "surface": "#111111",
+      "onSurface": "#F7F7F5",
+      "surfaceSecondary": "#1C1C1E",
+      "onSurfaceSecondary": "#F7F7F5",
+      "surfaceTertiary": "#2C2C2E",
+      "onSurfaceTertiary": "#A1A1AA",
+      "surfaceInverse": "#F7F7F5",
+      "onSurfaceInverse": "#111111",
+      "brand": "#24975A",
+      "brandPrimary": "#24975A",
+      "onBrandPrimary": "#000000",
+      "brandSecondary": "#34B36D",
+      "onBrandSecondary": "#000000",
+      "brandTertiary": "#0B3D23",
+      "onBrandTertiary": "#24975A",
+      "success": "#24975A",
+      "onSuccess": "#000000",
+      "warning": "#F59E0B",
+      "onWarning": "#000000",
+      "error": "#EF4444",
+      "onError": "#FFFFFF",
+      "info": "#6B7280",
+      "onInfo": "#FFFFFF",
+      "border": "#2C2C2E",
+      "borderStrong": "#3A3A3C",
+      "divider": "#2C2C2E"
+    }
+  },
+  "typography": {
+    "displayFontFamily": "Plus Jakarta Sans",
+    "textFontFamily": "Plus Jakarta Sans",
+    "scale": {
+      "sm": 12,
+      "base": 14,
+      "lg": 16,
+      "xl": 20,
+      "2xl": 24
+    }
+  },
+  "spacing": {
+    "rule": "Generous padding around content. Empty space is content on purpose. Keep inputs and buttons minimum 44pt tall. Use 8pt grid logic.",
+    "xs": 4,
+    "sm": 8,
+    "md": 12,
+    "lg": 16,
+    "xl": 24,
+    "2xl": 32,
+    "3xl": 48
+  },
+  "radius_tokens": {
+    "sm": 6,
+    "md": 12,
+    "lg": 20,
+    "pill": 999
+  },
+  "shadow_tier": 1,
+  "navigation": "bottom_tabs",
+  "icon_set": "Phosphor",
+  "glassmorphism": {
+    "enabled": true,
+    "do's": [
+      "Use frosted glass on the bottom tab bar",
+      "Use glass on sticky headers over scrollable content (like Invoice list)",
+      "Use glass on sticky Bottom CTA panels (like 'Save Invoice' in the builder)"
+    ],
+    "dont's": [
+      "Never use on normal cards, form fields, or body text regions"
+    ]
+  },
+  "platform_libraries": {
+    "glass": {
+      "ios": "expo-glass-effect",
+      "android": "expo-blur",
+      "low_end_android_fallback": "solid surfaceSecondary"
+    },
+    "image": "expo-image",
+    "blur": "expo-blur",
+    "bottom_sheet": "@gorhom/bottom-sheet",
+    "animation": "react-native-reanimated",
+    "gesture": "react-native-gesture-handler"
+  },
+  "screens": [
+    {
+      "name": "Auth",
+      "purpose": "Sign in / Sign up flow.",
+      "states": {
+        "loading": "Centered spinner over dimmed screen.",
+        "empty": "N/A",
+        "error": "Inline text below input or bottom-sheet toast."
+      },
+      "layout": "Minimalist header with brand mark. Single column layout. Large, airy text inputs. Primary CTA sticky at bottom inside KeyboardAvoidingView."
+    },
+    {
+      "name": "Onboarding Wizard",
+      "purpose": "Setup business profile (name, currency, tax).",
+      "states": {
+        "loading": "Skeleton fields.",
+        "empty": "N/A",
+        "error": "Standard error toast."
+      },
+      "layout": "Full-bleed onboarding image at top with vertical gradient scrim, followed by setup form. Step indicator at the top. Sticky 'Next' CTA at bottom."
+    },
+    {
+      "name": "Dashboard",
+      "purpose": "High-level financial overview and quick actions.",
+      "states": {
+        "loading": "Skeleton cards for revenue and chart.",
+        "empty": "Empty state illustration 'Create your first invoice to see insights'.",
+        "error": "Readable message 'Unable to load dashboard' + Retry button."
+      },
+      "layout": "Hero section: Multi-column grid (Revenue, Outstanding, Overdue). Below: 6-month simple bar chart. Below: Recent Invoices (list of rows). Floating Action Button (FAB) '+ New Invoice' placed sticky at bottom right. Glass sticky header on scroll."
+    },
+    {
+      "name": "New Invoice (AI vs Manual)",
+      "purpose": "Create invoices either via plain English AI prompt or manual builder.",
+      "states": {
+        "loading": "Full screen 'AI is drafting your invoice...' with abstract animation.",
+        "empty": "N/A",
+        "error": "Error boundary above manual builder 'AI couldn't process that, please try again or enter manually'."
+      },
+      "layout": "Split path at top via segmented control or toggle. AI Path: Large text input area (surfaceTertiary background) + 'Generate Draft' CTA. Manual Path: Form layout with inline-create bottom sheet for customers/items. 'Live Totals' panel fixed at bottom inside a glass container, along with 'Preview & Save' button."
+    },
+    {
+      "name": "Invoice List",
+      "purpose": "View, filter, and search all invoices.",
+      "states": {
+        "loading": "List of skeleton cards.",
+        "empty": "Minimalist notepad illustration with text 'No invoices match this filter'.",
+        "error": "Retry button."
+      },
+      "layout": "Sticky glass header containing Search bar and horizontally scrolling Status Filter Chips (All, Draft, Sent, Paid, Overdue). Below: Vertically scrolling list of invoice cards. Cards display customer, amount, due date, and a colored status pill."
+    },
+    {
+      "name": "Invoice Detail (PDF Preview)",
+      "purpose": "Preview the invoice and perform actions (Share, Mark Paid).",
+      "states": {
+        "loading": "Centered spinner.",
+        "empty": "N/A",
+        "error": "Retry loading invoice."
+      },
+      "layout": "A styled, print-like preview (white card with subtle border on light gray bg) rendering the line items and totals. Sticky action bar at the bottom with: Share (Native sheet), Record Payment, and an options menu (Void, Duplicate)."
+    },
+    {
+      "name": "Customers",
+      "purpose": "Manage client list and view lifetime value.",
+      "states": {
+        "loading": "Skeleton rows.",
+        "empty": "Illustration 'No customers added yet' + 'Add Customer' CTA.",
+        "error": "Retry button."
+      },
+      "layout": "Search bar at top. List of customer rows (Avatar fallback to initials). Tapping opens a bottom sheet with their contact info, lifetime revenue, and invoice history."
+    },
+    {
+      "name": "Catalog",
+      "purpose": "Manage reusable line items.",
+      "states": {
+        "loading": "Skeleton rows.",
+        "empty": "Illustration 'No items added yet'.",
+        "error": "Retry button."
+      },
+      "layout": "List of items showing name, unit price, and tax rate. FAB to add new."
+    },
+    {
+      "name": "Settings",
+      "purpose": "Manage business profile, plan, and Anthropic API keys.",
+      "states": {
+        "loading": "Skeleton.",
+        "empty": "N/A",
+        "error": "N/A"
+      },
+      "layout": "Categorized list rows (Business Profile, API Key, Plan/Subscription) grouped in surfaceSecondary cards. Subscription section prominently shows current usage (e.g., '3/5 Invoices Used')."
+    }
+  ],
+  "images": {
+    "onboarding_hero": {
+      "url": "https://images.pexels.com/photos/5882647/pexels-photo-5882647.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940",
+      "alt": "Professional desk setup with laptop, representing business management."
+    },
+    "empty_invoices": {
+      "url": "https://images.pexels.com/photos/6779407/pexels-photo-6779407.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940",
+      "alt": "Minimalist blank notepad representing an empty state."
+    }
+  },
+  "instructions_to_main_agent": [
+    "Strictly follow the iOS-Native Clean layout principles. Use generous padding (16pt to 24pt) around the screen edges.",
+    "BANNED: Any shade of blue, purple, or indigo. Stick to the provided warm charcoal, sand, and deep emerald (brand) colors. This app must feel like a premium finance tool, not generic AI software.",
+    "Typography: Use Plus Jakarta Sans. Maximum font weight is 500. Use sizing for hierarchy, not boldness.",
+    "Implement the 'Sticky Primary CTA' pattern inside a glass container or solid surface over scrolling content (e.g., in the New Invoice manual builder).",
+    "All cards must span full width horizontally minus screen padding (no 48% widths clustered to the left).",
+    "Invoice Status Pills styling: Draft (surfaceTertiary/onSurfaceTertiary), Sent (warning/onWarning), Paid (success/onSuccess), Overdue (error/onError).",
+    "Ensure the AI text input area in the 'New Invoice' screen is large, inviting, and clearly distinguishable from standard form fields (use surfaceTertiary with ample padding).",
+    "Incorporate subtle haptic feedback for bottom-sheet openings, chip selections, and primary CTA interactions.",
+    "Render text on the onboarding image using the gradient-to-dark scrim pattern (Layer 0: Image, Layer 1: Vertical gradient transparent to surfaceInverse 70%+, Layer 2: Text)."
+  ]
+}
