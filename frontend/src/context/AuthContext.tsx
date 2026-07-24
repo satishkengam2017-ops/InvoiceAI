@@ -14,6 +14,7 @@ type AuthCtx = {
   bootstrapping: boolean;
   signIn: (email: string, password: string) => Promise<void>;
   signUp: (email: string, password: string, businessName: string) => Promise<void>;
+  signInWithClerk: (clerkToken: string) => Promise<void>;
   signOut: () => Promise<void>;
   refreshBusiness: () => Promise<void>;
 };
@@ -104,6 +105,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
+  const signInWithClerk = async (clerkToken: string) => {
+    setLoading(true);
+    try {
+      const res = await api.post<{ access_token: string }>("/auth/clerk-exchange", {
+        clerk_token: clerkToken,
+      });
+      await saveToken(res.access_token);
+      await loadSession();
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const signOut = async () => {
     await clearToken();
     setUser(null);
@@ -112,7 +126,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   return (
-    <AuthContext.Provider value={{ user, business, loading, bootstrapping, signIn, signUp, signOut, refreshBusiness }}>
+    <AuthContext.Provider value={{ user, business, loading, bootstrapping, signIn, signUp, signInWithClerk, signOut, refreshBusiness }}>
       {children}
     </AuthContext.Provider>
   );
