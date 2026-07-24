@@ -41,6 +41,7 @@ class BusinessUpdate(BaseModel):
     postal_code: Optional[str] = None
     country: Optional[str] = None
     currency: Optional[str] = None
+    tax_numbers: Optional[List[dict]] = None
     invoice_prefix: Optional[str] = None
     default_terms: Optional[str] = None
     default_due_days: Optional[int] = None
