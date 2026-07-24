@@ -1,7 +1,7 @@
 """Invoice routes: CRUD, line items, totals engine, plan-limit-gated
 create/duplicate, mark-paid/send/void.
 """
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -161,8 +161,8 @@ async def create_invoice(payload: InvoiceIn, ctx: dict = Depends(get_business), 
     totals = compute_totals(line_item_dicts, payload.discount_type, payload.discount_value or 0)
 
     now = datetime.now(timezone.utc)
-    issue = payload.issue_date or now.date().isoformat()
-    due = payload.due_date or (now + timedelta(days=biz.get("default_due_days", 14))).date().isoformat()
+    issue = date.fromisoformat(payload.issue_date) if payload.issue_date else now.date()
+    due = date.fromisoformat(payload.due_date) if payload.due_date else (now + timedelta(days=biz.get("default_due_days", 14))).date()
 
     invoice = Invoice(
         id=new_id(),
@@ -217,12 +217,11 @@ async def update_invoice(
     inv.notes = payload.notes
     inv.terms = payload.terms
     inv.stripe_payment_url = payload.stripe_payment_url
-    inv.issue_date = payload.issue_date or inv.issue_date
-    inv.due_date = payload.due_date or inv.due_date
+    inv.issue_date = date.fromisoformat(payload.issue_date) if payload.issue_date else inv.issue_date
+    inv.due_date = date.fromisoformat(payload.due_date) if payload.due_date else inv.due_date
     inv.updated_at = datetime.now(timezone.utc)
 
-    for li in list(inv.line_items):
-        await db.delete(li)
+    inv.line_items.clear()
     for idx, li in enumerate(line_item_dicts):
         inv.line_items.append(LineItem(sort_order=idx, **li))
 
