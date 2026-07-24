@@ -384,6 +384,74 @@ async def _create_business_and_user(
     return user_id, business_id
 
 
+class ClerkExchangeIn(BaseModel):
+    clerk_token: str
+
+
+async def resolve_clerk_user(clerk_token: str) -> tuple[str, str, bool]:
+    """Verify a Clerk session token and resolve it to (user_id, business_id,
+    is_new_business), applying the account-linking rule: a verified email
+    that matches an existing user logs into their existing business; no
+    match creates a new business+user exactly like /auth/register does.
+    """
+    if not CLERK_SECRET_KEY:
+        raise HTTPException(status_code=503, detail="Google sign-in is not configured.")
+
+    try:
+        payload = await verify_token_async(
+            clerk_token, VerifyTokenOptions(secret_key=CLERK_SECRET_KEY)
+        )
+    except TokenVerificationError:
+        raise HTTPException(
+            status_code=401, detail="Invalid Google sign-in session. Please try again."
+        )
+
+    clerk_user_id = payload.get("sub")
+    try:
+        clerk_user = await clerk_client.users.get_async(user_id=clerk_user_id)
+    except Exception:
+        raise HTTPException(
+            status_code=401, detail="Invalid Google sign-in session. Please try again."
+        )
+
+    email = next(
+        (
+            e.email_address
+            for e in clerk_user.email_addresses
+            if e.id == clerk_user.primary_email_address_id
+        ),
+        None,
+    )
+    if not email:
+        raise HTTPException(
+            status_code=400, detail="No verified email found on this Google account."
+        )
+    email = email.lower()
+
+    existing = await db.users.find_one({"email": email})
+    if existing:
+        if not existing.get("clerk_user_id"):
+            await db.users.update_one(
+                {"id": existing["id"]}, {"$set": {"clerk_user_id": clerk_user_id}}
+            )
+        return existing["id"], existing["business_id"], False
+
+    display_name = clerk_user.first_name or "My Business"
+    user_id, business_id = await _create_business_and_user(
+        email=email,
+        business_name=display_name,
+        password_hash=None,
+        clerk_user_id=clerk_user_id,
+    )
+    return user_id, business_id, True
+
+
+@api.post("/auth/clerk-exchange", response_model=TokenOut)
+async def clerk_exchange(payload: ClerkExchangeIn):
+    user_id, business_id, _is_new = await resolve_clerk_user(payload.clerk_token)
+    return TokenOut(access_token=make_token(user_id, business_id))
+
+
 @api.post("/auth/register", response_model=TokenOut)
 async def register(payload: RegisterIn):
     existing = await db.users.find_one({"email": payload.email.lower()})
