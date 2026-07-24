@@ -12,3 +12,5 @@ anthropic==0.118.0
 stripe==14.4.1
 requests==2.34.2
 pytest==9.1.1
+clerk-backend-api==6.0.1
+pytest-xdist==3.8.0

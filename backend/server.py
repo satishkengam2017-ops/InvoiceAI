@@ -13,6 +13,12 @@ from pathlib import Path
 from typing import Any, List, Optional
 
 from anthropic import AsyncAnthropic
+from clerk_backend_api import Clerk
+from clerk_backend_api.security import (
+    TokenVerificationError,
+    VerifyTokenOptions,
+    verify_token_async,
+)
 from dotenv import load_dotenv
 from fastapi import APIRouter, Depends, FastAPI, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
@@ -36,6 +42,8 @@ JWT_SECRET = os.environ.get("JWT_SECRET", "dev-secret-change-me-in-prod-invoicea
 JWT_ALG = "HS256"
 JWT_EXPIRES_MIN = 60 * 24 * 30  # 30 days
 STRIPE_WEBHOOK_SECRET = os.environ.get("STRIPE_WEBHOOK_SECRET", "")
+CLERK_SECRET_KEY = os.environ.get("CLERK_SECRET_KEY", "")
+clerk_client = Clerk(bearer_auth=CLERK_SECRET_KEY)
 
 client = AsyncIOMotorClient(MONGO_URL)
 db = client[DB_NAME]
