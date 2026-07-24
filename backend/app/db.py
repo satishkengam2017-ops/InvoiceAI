@@ -5,17 +5,23 @@ from typing import AsyncGenerator
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase
 
-# DATABASE_URL must be Supabase's DIRECT connection (port 5432), not the
-# transaction-mode pooler (port 6543). SQLAlchemy's asyncpg dialect runs a
-# JSON-codec setup query on every new connection using asyncpg's own
-# internal, deterministic prepared-statement naming, which collides across
-# pooled connections on PgBouncer's transaction mode
+# DATABASE_URL must be Supabase's SESSION-mode pooler (port 5432,
+# *.pooler.supabase.com), not the TRANSACTION-mode pooler (port 6543, same
+# host). This is still Supavisor (Supabase's pooler), not a true unpooled
+# direct connection (db.<project-ref>.supabase.co) — that genuine direct
+# endpoint needs IPv6 reachability, which isn't confirmed for this app's
+# eventual deployment target, so it's deliberately not used here.
+#
+# SQLAlchemy's asyncpg dialect runs a JSON-codec setup query on every new
+# connection using asyncpg's own internal, deterministic prepared-statement
+# naming. Under transaction-mode pooling, the physical Postgres backend
+# connection can be reassigned between statements, so that name collides
+# with another session's prepared statement of the same name
 # (DuplicatePreparedStatementError) — verified directly, and no combination
-# of NullPool/prepared_statement_name_func avoids it, since that setup step
-# bypasses SQLAlchemy's overridable prepare path entirely. The transaction
-# pooler exists to support many short-lived serverless connections; InvoiceAI
-# is a single persistent server, which is exactly the case Supabase's own
-# docs recommend the direct connection for instead.
+# of NullPool/prepared_statement_name_func avoids it, since the codec setup
+# bypasses SQLAlchemy's overridable prepare path entirely. Session mode
+# holds one dedicated backend connection for the lifetime of the client
+# session, which avoids the reassignment that causes the collision.
 DATABASE_URL = os.environ["DATABASE_URL"]
 
 engine = create_async_engine(DATABASE_URL, pool_pre_ping=True)
