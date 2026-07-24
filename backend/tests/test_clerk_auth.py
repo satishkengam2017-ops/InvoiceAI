@@ -16,6 +16,10 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 import server  # noqa: E402
 
 
+def run(coro):
+    return asyncio.run(coro)
+
+
 class TestLoginGuard:
     def test_login_on_google_only_account_returns_clear_error(self):
         async def run_test():
