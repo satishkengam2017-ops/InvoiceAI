@@ -312,6 +312,69 @@ class TestInvoicesLifecycle:
         })
         assert r.status_code == 400
 
+    def test_invoice_patch_customer_from_other_business_rejected(self, auth_client, fresh_business):
+        # Regression test: PATCH must reject repointing customer_id to another
+        # business's customer, same as POST already does. Also confirms the
+        # invoice's customer_id/customer are left untouched by the rejection.
+        s = fresh_business["session"]
+        own_cid = self._make_customer(s)
+        r = s.post(f"{API}/invoices", json={
+            "customer_id": own_cid,
+            "line_items": [{"name": "Item", "quantity": 1, "unit_price_cents": 1000}],
+        })
+        assert r.status_code == 200, r.text
+        inv = r.json()
+
+        # Create a customer in a DIFFERENT business (the primary auth_client's)
+        r = auth_client.post(f"{API}/customers", json={"name": "TEST_XBiz_Patch"})
+        assert r.status_code == 200
+        foreign_cid = r.json()["id"]
+
+        r = s.patch(f"{API}/invoices/{inv['id']}", json={
+            "customer_id": foreign_cid,
+            "line_items": [{"name": "Item", "quantity": 1, "unit_price_cents": 1000}],
+        })
+        assert r.status_code == 400
+
+        # Invoice must be unchanged: still points at the original customer
+        r = s.get(f"{API}/invoices/{inv['id']}")
+        assert r.status_code == 200
+        assert r.json()["customer_id"] == own_cid
+        assert r.json()["customer"]["id"] == own_cid
+
+    def test_invoice_patch_replaces_line_items(self, fresh_business):
+        # Regression test: PATCH replacing line items must fully replace, not
+        # accumulate, and the PATCH response itself (not just a subsequent
+        # GET) must reflect only the new items.
+        s = fresh_business["session"]
+        cid = self._make_customer(s)
+        r = s.post(f"{API}/invoices", json={
+            "customer_id": cid,
+            "line_items": [
+                {"name": "Old Widget", "quantity": 1, "unit_price_cents": 1000},
+                {"name": "Old Gadget", "quantity": 1, "unit_price_cents": 500},
+            ],
+        })
+        assert r.status_code == 200, r.text
+        inv = r.json()
+        assert len(inv["line_items"]) == 2
+
+        r = s.patch(f"{API}/invoices/{inv['id']}", json={
+            "customer_id": cid,
+            "line_items": [{"name": "New Replacement", "quantity": 3, "unit_price_cents": 2000}],
+        })
+        assert r.status_code == 200, r.text
+        patched = r.json()
+        names = [li["name"] for li in patched["line_items"]]
+        assert names == ["New Replacement"], names
+        assert patched["subtotal_cents"] == 6000
+
+        # Independent GET must agree (confirms DB state, not just response shape)
+        r = s.get(f"{API}/invoices/{inv['id']}")
+        assert r.status_code == 200
+        names = [li["name"] for li in r.json()["line_items"]]
+        assert names == ["New Replacement"], names
+
 
 # ---------------------------------------------------------------------------
 # Dashboard
