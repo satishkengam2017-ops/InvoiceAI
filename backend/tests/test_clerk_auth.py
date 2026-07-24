@@ -75,13 +75,18 @@ class TestLoginGuard:
         asyncio.run(run_test())
 
 
-def fake_clerk_user(email: str, first_name: str = "Ada"):
+def fake_clerk_user(email: str, first_name: str = "Ada", verified: bool = True):
     """Build a stand-in for clerk_backend_api.models.User with just the
     fields resolve_clerk_user() reads."""
+    status = "verified" if verified else "unverified"
     return SimpleNamespace(
         first_name=first_name,
         primary_email_address_id="idn_primary",
-        email_addresses=[SimpleNamespace(id="idn_primary", email_address=email)],
+        email_addresses=[SimpleNamespace(
+            id="idn_primary",
+            email_address=email,
+            verification=SimpleNamespace(status=status),
+        )],
     )
 
 
@@ -139,6 +144,16 @@ class TestResolveClerkUser:
                      first_name=None, primary_email_address_id=None, email_addresses=[]
                  )),
              ):
+            try:
+                run(server.resolve_clerk_user("fake-token"))
+                assert False, "expected HTTPException"
+            except server.HTTPException as e:
+                assert e.status_code == 400
+
+    def test_unverified_email_raises_400(self):
+        email = f"clerk_unverified_{uuid.uuid4().hex[:10]}@example.com"
+        with patch.object(server, "verify_token_async", AsyncMock(return_value={"sub": "user_unverified"})), \
+             patch.object(server.clerk_client.users, "get_async", AsyncMock(return_value=fake_clerk_user(email, verified=False))):
             try:
                 run(server.resolve_clerk_user("fake-token"))
                 assert False, "expected HTTPException"

@@ -414,19 +414,15 @@ async def resolve_clerk_user(clerk_token: str) -> tuple[str, str, bool]:
             status_code=401, detail="Invalid Google sign-in session. Please try again."
         )
 
-    email = next(
-        (
-            e.email_address
-            for e in clerk_user.email_addresses
-            if e.id == clerk_user.primary_email_address_id
-        ),
+    primary = next(
+        (e for e in clerk_user.email_addresses if e.id == clerk_user.primary_email_address_id),
         None,
     )
-    if not email:
+    if not primary or not primary.verification or primary.verification.status != "verified":
         raise HTTPException(
             status_code=400, detail="No verified email found on this Google account."
         )
-    email = email.lower()
+    email = primary.email_address.lower()
 
     existing = await db.users.find_one({"email": email})
     if existing:
