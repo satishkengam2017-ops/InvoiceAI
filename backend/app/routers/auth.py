@@ -1,13 +1,19 @@
-"""Auth routes: register, login, me. Clerk exchange is added in Task 4."""
+"""Auth routes: register, login, me, clerk-exchange."""
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.auth import _create_business_and_user, get_current_user, make_token, pwd_ctx
+from app.auth import (
+    _create_business_and_user,
+    get_current_user,
+    make_token,
+    pwd_ctx,
+    resolve_clerk_user,
+)
 from app.db import get_db
 from app.models import User
-from app.schemas import LoginIn, MeOut, RegisterIn, TokenOut
+from app.schemas import ClerkExchangeIn, LoginIn, MeOut, RegisterIn, TokenOut
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -54,3 +60,9 @@ async def login(payload: LoginIn, db: AsyncSession = Depends(get_db)):
 async def me(ctx: dict = Depends(get_current_user)):
     u = ctx["user"]
     return MeOut(id=u["id"], email=u["email"], business_id=u["business_id"], name=u.get("name"))
+
+
+@router.post("/clerk-exchange", response_model=TokenOut)
+async def clerk_exchange(payload: ClerkExchangeIn, db: AsyncSession = Depends(get_db)):
+    user_id, business_id, _is_new = await resolve_clerk_user(db, payload.clerk_token)
+    return TokenOut(access_token=make_token(user_id, business_id))

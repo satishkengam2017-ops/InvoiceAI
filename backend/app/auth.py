@@ -1,10 +1,16 @@
 """Auth core: JWT issuing/verification and the shared business+user creation
-helper. Clerk-specific verification is added in Task 4.
+helper, plus Clerk Google sign-in verification.
 """
 import os
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
+from clerk_backend_api import Clerk
+from clerk_backend_api.security import (
+    TokenVerificationError,
+    VerifyTokenOptions,
+    verify_token_async,
+)
 from fastapi import Depends, HTTPException
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jose import JWTError, jwt
@@ -18,6 +24,9 @@ from app.models import Business, User, new_id
 JWT_SECRET = os.environ.get("JWT_SECRET", "dev-secret-change-me-in-prod-invoiceai-32chars")
 JWT_ALG = "HS256"
 JWT_EXPIRES_MIN = 60 * 24 * 30  # 30 days
+
+CLERK_SECRET_KEY = os.environ.get("CLERK_SECRET_KEY", "")
+clerk_client = Clerk(bearer_auth=CLERK_SECRET_KEY)
 
 pwd_ctx = CryptContext(schemes=["bcrypt"], deprecated="auto")
 bearer_scheme = HTTPBearer(auto_error=False)
@@ -105,3 +114,57 @@ async def _create_business_and_user(
     db.add(user)
     await db.commit()
     return user_id, business_id
+
+
+async def resolve_clerk_user(db: AsyncSession, clerk_token: str) -> tuple[str, str, bool]:
+    """Verify a Clerk session token and resolve it to (user_id, business_id,
+    is_new_business), applying the account-linking rule: a verified email
+    that matches an existing user logs into their existing business; no
+    match creates a new business+user exactly like /auth/register does.
+    """
+    if not CLERK_SECRET_KEY:
+        raise HTTPException(status_code=503, detail="Google sign-in is not configured.")
+
+    try:
+        payload = await verify_token_async(
+            clerk_token, VerifyTokenOptions(secret_key=CLERK_SECRET_KEY)
+        )
+    except TokenVerificationError:
+        raise HTTPException(
+            status_code=401, detail="Invalid Google sign-in session. Please try again."
+        )
+
+    clerk_user_id = payload.get("sub")
+    try:
+        clerk_user = await clerk_client.users.get_async(user_id=clerk_user_id)
+    except Exception:
+        raise HTTPException(
+            status_code=401, detail="Invalid Google sign-in session. Please try again."
+        )
+
+    primary = next(
+        (e for e in clerk_user.email_addresses if e.id == clerk_user.primary_email_address_id),
+        None,
+    )
+    if not primary or not primary.verification or primary.verification.status != "verified":
+        raise HTTPException(
+            status_code=400, detail="No verified email found on this Google account."
+        )
+    email = primary.email_address.lower()
+
+    existing = (await db.execute(select(User).where(User.email == email))).scalar_one_or_none()
+    if existing:
+        if not existing.clerk_user_id:
+            existing.clerk_user_id = clerk_user_id
+            await db.commit()
+        return existing.id, existing.business_id, False
+
+    display_name = clerk_user.first_name or "My Business"
+    user_id, business_id = await _create_business_and_user(
+        db,
+        email=email,
+        business_name=display_name,
+        password_hash=None,
+        clerk_user_id=clerk_user_id,
+    )
+    return user_id, business_id, True
