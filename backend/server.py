@@ -327,12 +327,18 @@ async def list_plans(ctx: dict = Depends(get_business)):
 # ---------------------------------------------------------------------------
 # Auth routes
 # ---------------------------------------------------------------------------
-@api.post("/auth/register", response_model=TokenOut)
-async def register(payload: RegisterIn):
-    existing = await db.users.find_one({"email": payload.email.lower()})
-    if existing:
-        raise HTTPException(status_code=400, detail="Email already registered")
+async def _create_business_and_user(
+    email: str,
+    business_name: str,
+    password_hash: Optional[str],
+    clerk_user_id: Optional[str] = None,
+) -> tuple[str, str]:
+    """Create a new business + owner user. Returns (user_id, business_id).
 
+    Shared by /auth/register (password_hash set, clerk_user_id=None) and the
+    Clerk exchange path (password_hash=None, clerk_user_id set) so both flows
+    can't drift out of sync.
+    """
     business_id = new_id()
     user_id = new_id()
     now = datetime.now(timezone.utc)
@@ -340,9 +346,9 @@ async def register(payload: RegisterIn):
     business = {
         "id": business_id,
         "owner_user_id": user_id,
-        "name": payload.business_name,
+        "name": business_name,
         "legal_name": None,
-        "email": payload.email.lower(),
+        "email": email,
         "phone": None,
         "website": None,
         "logo_url": None,
@@ -365,15 +371,29 @@ async def register(payload: RegisterIn):
     }
     user = {
         "id": user_id,
-        "email": payload.email.lower(),
-        "password_hash": pwd_ctx.hash(payload.password),
+        "email": email,
+        "password_hash": password_hash,
         "business_id": business_id,
         "name": None,
         "role": "OWNER",
+        "clerk_user_id": clerk_user_id,
         "created_at": now.isoformat(),
     }
     await db.businesses.insert_one(business)
     await db.users.insert_one(user)
+    return user_id, business_id
+
+
+@api.post("/auth/register", response_model=TokenOut)
+async def register(payload: RegisterIn):
+    existing = await db.users.find_one({"email": payload.email.lower()})
+    if existing:
+        raise HTTPException(status_code=400, detail="Email already registered")
+    user_id, business_id = await _create_business_and_user(
+        email=payload.email.lower(),
+        business_name=payload.business_name,
+        password_hash=pwd_ctx.hash(payload.password),
+    )
     return TokenOut(access_token=make_token(user_id, business_id))
 
 
