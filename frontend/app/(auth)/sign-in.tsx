@@ -11,6 +11,7 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { Button } from "@/src/components/Button";
+import { GoogleSignInButton } from "@/src/components/GoogleSignInButton";
 import { Input } from "@/src/components/Input";
 import { useAuth } from "@/src/context/AuthContext";
 import { colors, spacing, typography, webContent } from "@/src/lib/theme";
@@ -60,6 +61,7 @@ export default function SignIn() {
             />
             {err ? <Text style={styles.err}>{err}</Text> : null}
             <Button testID="sign-in-submit" title="Sign In" loading={loading} onPress={onSubmit} />
+            <GoogleSignInButton onError={setErr} />
 
             <Link href="/(auth)/sign-up" asChild>
               <Text testID="sign-in-link-signup" style={styles.link}>
