@@ -1,12 +1,12 @@
 # InvoiceAI
 
-Invoicing app with AI-powered invoice drafting (Anthropic Claude), built with FastAPI + MongoDB (backend) and Expo / React Native (frontend).
+Invoicing app with AI-powered invoice drafting (Anthropic Claude), built with FastAPI + Postgres (Supabase) (backend) and Expo / React Native (frontend).
 
 ## Prerequisites
 
 - Python 3.11+
 - Node.js 20+ (npm or yarn)
-- MongoDB running locally (e.g. `docker run -d -p 27017:27017 --name invoiceai-mongo mongo:7`)
+- A Supabase Postgres project (session-mode pooler connection string)
 
 ## Backend
 
@@ -15,15 +15,14 @@ cd backend
 python -m venv .venv
 .venv\Scripts\activate        # Windows (use `source .venv/bin/activate` on macOS/Linux)
 pip install -r requirements.txt
-uvicorn server:app --reload --port 8000
+uvicorn app.main:app --reload --port 8000
 ```
 
 Configuration lives in `backend/.env` (see `.env.example`):
 
 | Variable | Required | Description |
 |---|---|---|
-| `MONGO_URL` | yes | MongoDB connection string (default `mongodb://localhost:27017`) |
-| `DB_NAME` | yes | Database name (default `invoiceai`) |
+| `DATABASE_URL` | yes | Supabase Postgres connection string (session-mode pooler, port 5432) |
 | `JWT_SECRET` | recommended | Secret for signing auth tokens |
 | `STRIPE_WEBHOOK_SECRET` | no | Only needed for Stripe plan-upgrade webhooks |
 | `STRIPE_STARTER_URL` / `STRIPE_PRO_URL` | no | Stripe Payment Link URLs for paid plans |
