@@ -400,7 +400,14 @@ async def register(payload: RegisterIn):
 @api.post("/auth/login", response_model=TokenOut)
 async def login(payload: LoginIn):
     user = await db.users.find_one({"email": payload.email.lower()})
-    if not user or not pwd_ctx.verify(payload.password, user["password_hash"]):
+    if not user:
+        raise HTTPException(status_code=400, detail="Invalid email or password")
+    if not user.get("password_hash"):
+        raise HTTPException(
+            status_code=400,
+            detail="This account uses Google sign-in. Continue with Google instead.",
+        )
+    if not pwd_ctx.verify(payload.password, user["password_hash"]):
         raise HTTPException(status_code=400, detail="Invalid email or password")
     return TokenOut(access_token=make_token(user["id"], user["business_id"]))
 
