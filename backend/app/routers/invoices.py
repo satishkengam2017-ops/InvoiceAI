@@ -79,7 +79,9 @@ async def _serialize_invoice(db: AsyncSession, inv: Invoice, tax_breakdown: Opti
     data["tax_breakdown"] = tax_breakdown if tax_breakdown is not None else compute_totals(
         data["line_items"], data["discount_type"], data["discount_value"]
     )["tax_breakdown"]
-    cust = (await db.execute(select(Customer).where(Customer.id == inv.customer_id))).scalar_one_or_none()
+    cust = (await db.execute(
+        select(Customer).where(Customer.id == inv.customer_id, Customer.business_id == inv.business_id)
+    )).scalar_one_or_none()
     data["customer"] = to_dict(cust) if cust else None
     return data
 
@@ -203,6 +205,12 @@ async def update_invoice(
         raise HTTPException(status_code=404, detail="Invoice not found")
     if inv.status != "DRAFT":
         raise HTTPException(status_code=400, detail="Only DRAFT invoices can be edited")
+
+    cust = (await db.execute(
+        select(Customer).where(Customer.id == payload.customer_id, Customer.business_id == biz_id)
+    )).scalar_one_or_none()
+    if not cust:
+        raise HTTPException(status_code=400, detail="Customer not found for this business")
 
     line_item_dicts = [li.model_dump() for li in payload.line_items]
     totals = compute_totals(line_item_dicts, payload.discount_type, payload.discount_value or 0)
