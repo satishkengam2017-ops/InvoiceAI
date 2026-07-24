@@ -1,9 +1,11 @@
 """Stripe webhook route (public, signature-verified, idempotent)."""
 import os
+import uuid
 
 import stripe
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy import select, update as sql_update
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db import get_db
@@ -53,6 +55,10 @@ async def stripe_webhook(request: Request, db: AsyncSession = Depends(get_db)):
         if "." in client_ref:
             plan, biz_id = client_ref.split(".", 1)
             plan = plan.upper()
+            try:
+                uuid.UUID(biz_id)
+            except ValueError:
+                biz_id = None
             if plan in VALID_PLANS and biz_id:
                 values: dict = {"plan": plan}
                 if customer_id:
@@ -71,6 +77,13 @@ async def stripe_webhook(request: Request, db: AsyncSession = Depends(get_db)):
     # invoice.payment_failed: non-fatal, no action needed (matches pre-migration behavior)
 
     db.add(WebhookEvent(id=event_id, type=event_type))
-    await db.commit()
+    try:
+        await db.commit()
+    except IntegrityError:
+        # Concurrent delivery of the same event raced past the dedup check
+        # above; the mutations we just applied are idempotent SETs, so it's
+        # safe to treat the losing commit as a duplicate rather than crash.
+        await db.rollback()
+        return {"status": "ok", "message": "duplicate"}
 
     return {"status": "ok"}
