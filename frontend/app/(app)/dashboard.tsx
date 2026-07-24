@@ -17,7 +17,7 @@ import { StatusPill } from "@/src/components/StatusPill";
 import { useAuth } from "@/src/context/AuthContext";
 import { api } from "@/src/lib/api";
 import { formatMoney } from "@/src/lib/money";
-import { colors, radius, spacing, typography } from "@/src/lib/theme";
+import { colors, radius, spacing, typography, webContent } from "@/src/lib/theme";
 import type { DashboardSummary, Invoice } from "@/src/lib/types";
 
 export default function Dashboard() {
@@ -52,7 +52,7 @@ export default function Dashboard() {
   return (
     <SafeAreaView style={styles.safe} edges={["top"]}>
       <ScrollView
-        contentContainerStyle={styles.scroll}
+        contentContainerStyle={[styles.scroll, webContent]}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} tintColor={colors.brand} />}
       >
         <View style={styles.header}>

@@ -15,7 +15,7 @@ import { Card, EmptyState } from "@/src/components/Card";
 import { StatusPill } from "@/src/components/StatusPill";
 import { api } from "@/src/lib/api";
 import { formatMoney } from "@/src/lib/money";
-import { colors, radius, spacing, typography } from "@/src/lib/theme";
+import { colors, radius, spacing, typography, webContent } from "@/src/lib/theme";
 import type { Customer } from "@/src/lib/types";
 
 export default function CustomerDetail() {
@@ -29,6 +29,8 @@ export default function CustomerDetail() {
     try {
       const c = await api.get<Customer>(`/customers/${id}`);
       setCustomer(c);
+    } catch {
+      /* ignore — AuthContext redirects if the session is invalid */
     } finally {
       setLoading(false);
     }
@@ -54,7 +56,7 @@ export default function CustomerDetail() {
         <View style={{ width: 24 }} />
       </View>
 
-      <ScrollView contentContainerStyle={styles.scroll}>
+      <ScrollView contentContainerStyle={[styles.scroll, webContent]}>
         <Card style={styles.hero}>
           <View style={styles.avatar}>
             <Text style={styles.avatarText}>{customer.name.slice(0, 1).toUpperCase()}</Text>

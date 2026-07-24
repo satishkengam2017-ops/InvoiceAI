@@ -17,7 +17,7 @@ import { Card } from "@/src/components/Card";
 import { Input } from "@/src/components/Input";
 import { useAuth } from "@/src/context/AuthContext";
 import { api } from "@/src/lib/api";
-import { colors, radius, spacing, typography } from "@/src/lib/theme";
+import { colors, radius, spacing, typography, webContent } from "@/src/lib/theme";
 import type { Business, Plan } from "@/src/lib/types";
 
 type PlanInfo = {
@@ -177,7 +177,7 @@ export default function Settings() {
   return (
     <SafeAreaView style={styles.safe} edges={["top"]}>
       <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={{ flex: 1 }}>
-        <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
+        <ScrollView contentContainerStyle={[styles.scroll, webContent]} keyboardShouldPersistTaps="handled">
           <Text style={styles.title}>Settings</Text>
 
           {/* Business Profile */}

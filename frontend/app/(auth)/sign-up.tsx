@@ -13,7 +13,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { Button } from "@/src/components/Button";
 import { Input } from "@/src/components/Input";
 import { useAuth } from "@/src/context/AuthContext";
-import { colors, spacing, typography } from "@/src/lib/theme";
+import { colors, spacing, typography, webContent } from "@/src/lib/theme";
 
 export default function SignUp() {
   const { signUp, loading } = useAuth();
@@ -36,7 +36,7 @@ export default function SignUp() {
   return (
     <SafeAreaView style={styles.safe} edges={["top", "bottom"]}>
       <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={{ flex: 1 }}>
-        <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
+        <ScrollView contentContainerStyle={[styles.scroll, webContent]} keyboardShouldPersistTaps="handled">
           <View style={styles.brand}>
             <Text style={styles.brandMark}>Create account</Text>
             <Text style={styles.subtitle}>Start invoicing in under a minute.</Text>

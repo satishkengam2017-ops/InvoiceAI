@@ -13,7 +13,7 @@ import { Button } from "@/src/components/Button";
 import { Input } from "@/src/components/Input";
 import { useAuth } from "@/src/context/AuthContext";
 import { api } from "@/src/lib/api";
-import { colors, spacing, typography } from "@/src/lib/theme";
+import { colors, spacing, typography, webContent } from "@/src/lib/theme";
 import type { Business } from "@/src/lib/types";
 
 export default function Onboarding() {
@@ -53,7 +53,7 @@ export default function Onboarding() {
   return (
     <SafeAreaView style={styles.safe} edges={["top", "bottom"]}>
       <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={{ flex: 1 }}>
-        <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
+        <ScrollView contentContainerStyle={[styles.scroll, webContent]} keyboardShouldPersistTaps="handled">
           <View style={styles.header}>
             <Text style={styles.step}>Step 1 of 1</Text>
             <Text style={styles.title}>Tell us about your business</Text>

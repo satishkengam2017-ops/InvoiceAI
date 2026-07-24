@@ -13,7 +13,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { Button } from "@/src/components/Button";
 import { Input } from "@/src/components/Input";
 import { useAuth } from "@/src/context/AuthContext";
-import { colors, spacing, typography } from "@/src/lib/theme";
+import { colors, spacing, typography, webContent } from "@/src/lib/theme";
 
 export default function SignIn() {
   const { signIn, loading } = useAuth();
@@ -33,7 +33,7 @@ export default function SignIn() {
   return (
     <SafeAreaView style={styles.safe} edges={["top", "bottom"]}>
       <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={{ flex: 1 }}>
-        <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
+        <ScrollView contentContainerStyle={[styles.scroll, webContent]} keyboardShouldPersistTaps="handled">
           <View style={styles.brand}>
             <Text style={styles.brandMark}>Invoice<Text style={{ color: colors.brand }}>AI</Text></Text>
             <Text style={styles.subtitle}>Get paid faster. Draft a professional invoice in 30 seconds.</Text>

@@ -23,7 +23,7 @@ import { useAuth } from "@/src/context/AuthContext";
 import { api } from "@/src/lib/api";
 import { generateInvoicePdfFile, invoiceHtml } from "@/src/lib/invoicePdf";
 import { formatMoney, parseCents } from "@/src/lib/money";
-import { colors, radius, spacing, typography } from "@/src/lib/theme";
+import { colors, radius, spacing, typography, webContent } from "@/src/lib/theme";
 import type { Business, Invoice } from "@/src/lib/types";
 
 export default function InvoiceDetail() {
@@ -228,7 +228,10 @@ export default function InvoiceDetail() {
         </TouchableOpacity>
       </View>
 
-      <ScrollView contentContainerStyle={styles.scroll}>
+      <ScrollView contentContainerStyle={[styles.scroll, Platform.OS === "web" && styles.scrollWeb]}>
+        {/* On web the invoice renders on an A4-like paper sheet; on native the
+            wrapper is unstyled and the layout is unchanged. */}
+        <View style={paperStyle}>
         {/* Status row */}
         <View style={styles.statusRow}>
           <StatusPill status={invoice.status} testID="invoice-status" />
@@ -305,12 +308,14 @@ export default function InvoiceDetail() {
           </View>
         ) : null}
 
-        <View style={{ height: 120 }} />
+        </View>
+        <View style={{ height: Platform.OS === "web" ? 40 : 120 }} />
       </ScrollView>
 
       {/* Action bar */}
       {!isVoid ? (
         <View style={styles.actionBar}>
+          <View style={[styles.actionBarInner, webContent]}>
           <TouchableOpacity
             testID="invoice-download-pdf-btn"
             style={[styles.actionBtn, styles.actionBtnOutline]}
@@ -342,6 +347,7 @@ export default function InvoiceDetail() {
               <Text style={[styles.actionBtnText, { color: colors.brand }]}>Record Payment</Text>
             </TouchableOpacity>
           ) : null}
+          </View>
         </View>
       ) : null}
 
@@ -401,8 +407,28 @@ function TotalRow({ label, value, bold }: { label: string; value: string; bold?:
   );
 }
 
+// A4-proportioned paper sheet for the on-screen invoice (web only; plain
+// pass-through wrapper on native). boxShadow is a react-native-web style.
+const paperStyle =
+  Platform.OS === "web"
+    ? ({
+        width: "100%",
+        maxWidth: 640,
+        alignSelf: "center",
+        backgroundColor: colors.surfaceSecondary,
+        borderWidth: 1,
+        borderColor: colors.border,
+        borderRadius: 12,
+        paddingHorizontal: 36,
+        paddingVertical: 40,
+        minHeight: 900,
+        boxShadow: "0 1px 2px rgba(17,17,16,0.05), 0 10px 30px -8px rgba(17,17,16,0.10)",
+      } as object)
+    : undefined;
+
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.surface },
+  scrollWeb: { paddingVertical: spacing.xxl },
   topbar: {
     flexDirection: "row",
     justifyContent: "space-between",
@@ -466,14 +492,16 @@ const styles = StyleSheet.create({
   notes: { color: colors.onSurface, fontSize: typography.base, lineHeight: 22 },
   terms: { color: colors.muted, fontSize: typography.sm, lineHeight: 20 },
   actionBar: {
-    flexDirection: "row",
-    gap: spacing.sm,
     paddingHorizontal: spacing.lg,
     paddingTop: spacing.md,
     paddingBottom: Platform.OS === "ios" ? spacing.md : spacing.lg,
     borderTopWidth: 1,
     borderTopColor: colors.divider,
     backgroundColor: colors.surfaceSecondary,
+  },
+  actionBarInner: {
+    flexDirection: "row",
+    gap: spacing.sm,
   },
   actionBtn: {
     flex: 1,

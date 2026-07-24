@@ -7,8 +7,11 @@ import { SafeAreaProvider } from "react-native-safe-area-context";
 
 import { AuthProvider } from "@/src/context/AuthContext";
 import { useIconFonts } from "@/src/hooks/use-icon-fonts";
+import { injectWebShell } from "@/src/lib/webShell";
 
 LogBox.ignoreAllLogs(true);
+
+injectWebShell();
 
 SplashScreen.preventAutoHideAsync();
 

@@ -1,4 +1,6 @@
 // Design tokens from /app/design_guidelines.json
+import { Platform } from "react-native";
+
 export const colors = {
   surface: "#F7F7F5",
   onSurface: "#111110",
@@ -56,6 +58,14 @@ export const typography = {
   weightMedium: "500" as const,
   weightSemibold: "600" as const,
 };
+
+// Web-only: keep main content narrow and centered inside the app window so
+// screens read as a focused document rather than a full-width website.
+// No-op on native, where screens already span the phone width.
+export const webContent = Platform.select({
+  web: { width: "100%" as const, maxWidth: 760, alignSelf: "center" as const },
+  default: {},
+});
 
 export const statusColors: Record<string, { bg: string; fg: string; label: string }> = {
   DRAFT: { bg: colors.surfaceTertiary, fg: colors.onSurfaceTertiary, label: "Draft" },
