@@ -5,6 +5,17 @@ from typing import AsyncGenerator
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase
 
+# DATABASE_URL must be Supabase's DIRECT connection (port 5432), not the
+# transaction-mode pooler (port 6543). SQLAlchemy's asyncpg dialect runs a
+# JSON-codec setup query on every new connection using asyncpg's own
+# internal, deterministic prepared-statement naming, which collides across
+# pooled connections on PgBouncer's transaction mode
+# (DuplicatePreparedStatementError) — verified directly, and no combination
+# of NullPool/prepared_statement_name_func avoids it, since that setup step
+# bypasses SQLAlchemy's overridable prepare path entirely. The transaction
+# pooler exists to support many short-lived serverless connections; InvoiceAI
+# is a single persistent server, which is exactly the case Supabase's own
+# docs recommend the direct connection for instead.
 DATABASE_URL = os.environ["DATABASE_URL"]
 
 engine = create_async_engine(DATABASE_URL, pool_pre_ping=True)
