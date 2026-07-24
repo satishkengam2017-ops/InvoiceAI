@@ -9,7 +9,7 @@ import { useIconFonts } from "@/src/hooks/use-icon-fonts";
 import { injectWebShell } from "@/src/lib/webShell";
 import { RootProviders } from "@/src/providers/RootProviders";
 
-const CLERK_PUBLISHABLE_KEY = process.env.EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY;
+const CLERK_PUBLISHABLE_KEY = process.env.EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY!;
 
 if (!CLERK_PUBLISHABLE_KEY) {
   throw new Error("Add EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY to frontend/.env");
