@@ -13,6 +13,12 @@ from pathlib import Path
 from typing import Any, List, Optional
 
 from anthropic import AsyncAnthropic
+from clerk_backend_api import Clerk
+from clerk_backend_api.security import (
+    TokenVerificationError,
+    VerifyTokenOptions,
+    verify_token_async,
+)
 from dotenv import load_dotenv
 from fastapi import APIRouter, Depends, FastAPI, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
@@ -36,6 +42,8 @@ JWT_SECRET = os.environ.get("JWT_SECRET", "dev-secret-change-me-in-prod-invoicea
 JWT_ALG = "HS256"
 JWT_EXPIRES_MIN = 60 * 24 * 30  # 30 days
 STRIPE_WEBHOOK_SECRET = os.environ.get("STRIPE_WEBHOOK_SECRET", "")
+CLERK_SECRET_KEY = os.environ.get("CLERK_SECRET_KEY", "")
+clerk_client = Clerk(bearer_auth=CLERK_SECRET_KEY)
 
 client = AsyncIOMotorClient(MONGO_URL)
 db = client[DB_NAME]
@@ -319,12 +327,18 @@ async def list_plans(ctx: dict = Depends(get_business)):
 # ---------------------------------------------------------------------------
 # Auth routes
 # ---------------------------------------------------------------------------
-@api.post("/auth/register", response_model=TokenOut)
-async def register(payload: RegisterIn):
-    existing = await db.users.find_one({"email": payload.email.lower()})
-    if existing:
-        raise HTTPException(status_code=400, detail="Email already registered")
+async def _create_business_and_user(
+    email: str,
+    business_name: str,
+    password_hash: Optional[str],
+    clerk_user_id: Optional[str] = None,
+) -> tuple[str, str]:
+    """Create a new business + owner user. Returns (user_id, business_id).
 
+    Shared by /auth/register (password_hash set, clerk_user_id=None) and the
+    Clerk exchange path (password_hash=None, clerk_user_id set) so both flows
+    can't drift out of sync.
+    """
     business_id = new_id()
     user_id = new_id()
     now = datetime.now(timezone.utc)
@@ -332,9 +346,9 @@ async def register(payload: RegisterIn):
     business = {
         "id": business_id,
         "owner_user_id": user_id,
-        "name": payload.business_name,
+        "name": business_name,
         "legal_name": None,
-        "email": payload.email.lower(),
+        "email": email,
         "phone": None,
         "website": None,
         "logo_url": None,
@@ -357,22 +371,107 @@ async def register(payload: RegisterIn):
     }
     user = {
         "id": user_id,
-        "email": payload.email.lower(),
-        "password_hash": pwd_ctx.hash(payload.password),
+        "email": email,
+        "password_hash": password_hash,
         "business_id": business_id,
         "name": None,
         "role": "OWNER",
+        "clerk_user_id": clerk_user_id,
         "created_at": now.isoformat(),
     }
     await db.businesses.insert_one(business)
     await db.users.insert_one(user)
+    return user_id, business_id
+
+
+class ClerkExchangeIn(BaseModel):
+    clerk_token: str
+
+
+async def resolve_clerk_user(clerk_token: str) -> tuple[str, str, bool]:
+    """Verify a Clerk session token and resolve it to (user_id, business_id,
+    is_new_business), applying the account-linking rule: a verified email
+    that matches an existing user logs into their existing business; no
+    match creates a new business+user exactly like /auth/register does.
+    """
+    if not CLERK_SECRET_KEY:
+        raise HTTPException(status_code=503, detail="Google sign-in is not configured.")
+
+    try:
+        payload = await verify_token_async(
+            clerk_token, VerifyTokenOptions(secret_key=CLERK_SECRET_KEY)
+        )
+    except TokenVerificationError:
+        raise HTTPException(
+            status_code=401, detail="Invalid Google sign-in session. Please try again."
+        )
+
+    clerk_user_id = payload.get("sub")
+    try:
+        clerk_user = await clerk_client.users.get_async(user_id=clerk_user_id)
+    except Exception:
+        raise HTTPException(
+            status_code=401, detail="Invalid Google sign-in session. Please try again."
+        )
+
+    primary = next(
+        (e for e in clerk_user.email_addresses if e.id == clerk_user.primary_email_address_id),
+        None,
+    )
+    if not primary or not primary.verification or primary.verification.status != "verified":
+        raise HTTPException(
+            status_code=400, detail="No verified email found on this Google account."
+        )
+    email = primary.email_address.lower()
+
+    existing = await db.users.find_one({"email": email})
+    if existing:
+        if not existing.get("clerk_user_id"):
+            await db.users.update_one(
+                {"id": existing["id"]}, {"$set": {"clerk_user_id": clerk_user_id}}
+            )
+        return existing["id"], existing["business_id"], False
+
+    display_name = clerk_user.first_name or "My Business"
+    user_id, business_id = await _create_business_and_user(
+        email=email,
+        business_name=display_name,
+        password_hash=None,
+        clerk_user_id=clerk_user_id,
+    )
+    return user_id, business_id, True
+
+
+@api.post("/auth/clerk-exchange", response_model=TokenOut)
+async def clerk_exchange(payload: ClerkExchangeIn):
+    user_id, business_id, _is_new = await resolve_clerk_user(payload.clerk_token)
+    return TokenOut(access_token=make_token(user_id, business_id))
+
+
+@api.post("/auth/register", response_model=TokenOut)
+async def register(payload: RegisterIn):
+    existing = await db.users.find_one({"email": payload.email.lower()})
+    if existing:
+        raise HTTPException(status_code=400, detail="Email already registered")
+    user_id, business_id = await _create_business_and_user(
+        email=payload.email.lower(),
+        business_name=payload.business_name,
+        password_hash=pwd_ctx.hash(payload.password),
+    )
     return TokenOut(access_token=make_token(user_id, business_id))
 
 
 @api.post("/auth/login", response_model=TokenOut)
 async def login(payload: LoginIn):
     user = await db.users.find_one({"email": payload.email.lower()})
-    if not user or not pwd_ctx.verify(payload.password, user["password_hash"]):
+    if not user:
+        raise HTTPException(status_code=400, detail="Invalid email or password")
+    if not user.get("password_hash"):
+        raise HTTPException(
+            status_code=400,
+            detail="This account uses Google sign-in. Continue with Google instead.",
+        )
+    if not pwd_ctx.verify(payload.password, user["password_hash"]):
         raise HTTPException(status_code=400, detail="Invalid email or password")
     return TokenOut(access_token=make_token(user["id"], user["business_id"]))
 

@@ -17,7 +17,8 @@ import { AddCustomerModal } from "@/src/components/AddCustomerModal";
 import { Button } from "@/src/components/Button";
 import { EmptyState } from "@/src/components/Card";
 import { api } from "@/src/lib/api";
-import { colors, radius, spacing, typography } from "@/src/lib/theme";
+import { downloadCsv, toCsv, todayStamp } from "@/src/lib/csv";
+import { colors, radius, spacing, typography, webContent } from "@/src/lib/theme";
 import type { Customer } from "@/src/lib/types";
 
 export default function Customers() {
@@ -33,6 +34,8 @@ export default function Customers() {
       const params = search ? `?q=${encodeURIComponent(search)}` : "";
       const data = await api.get<Customer[]>(`/customers${params}`);
       setItems(data);
+    } catch {
+      /* ignore — AuthContext redirects if the session is invalid */
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -41,17 +44,29 @@ export default function Customers() {
 
   useFocusEffect(useCallback(() => { load(); }, [load]));
 
+  const exportCsv = async () => {
+    const rows = items.map((c) => [c.name, c.company || "", c.email || "", c.phone || ""]);
+    const csv = toCsv(["Customer Name", "Company Name", "Email Address", "Phone Number"], rows);
+    await downloadCsv(`customers_export_${todayStamp()}.csv`, csv);
+  };
+
   return (
     <SafeAreaView style={styles.safe} edges={["top"]}>
-      <View style={styles.header}>
+      <View style={[styles.header, webContent]}>
         <Text style={styles.title}>Customers</Text>
-        <TouchableOpacity testID="customers-add-btn" onPress={() => setShowAdd(true)} style={styles.newBtn}>
-          <Feather name="plus" size={16} color={colors.onBrandPrimary} />
-          <Text style={styles.newBtnText}>Add</Text>
-        </TouchableOpacity>
+        <View style={styles.headerActions}>
+          <TouchableOpacity testID="customers-download-csv" onPress={exportCsv} style={styles.csvBtn} activeOpacity={0.85}>
+            <Feather name="download" size={14} color={colors.brand} />
+            <Text style={styles.csvBtnText}>Download CSV</Text>
+          </TouchableOpacity>
+          <TouchableOpacity testID="customers-add-btn" onPress={() => setShowAdd(true)} style={styles.newBtn}>
+            <Feather name="plus" size={16} color={colors.onBrandPrimary} />
+            <Text style={styles.newBtnText}>Add</Text>
+          </TouchableOpacity>
+        </View>
       </View>
 
-      <View style={styles.searchWrap}>
+      <View style={[styles.searchWrap, webContent]}>
         <Feather name="search" size={16} color={colors.muted} />
         <TextInput
           testID="customers-search"
@@ -78,7 +93,7 @@ export default function Customers() {
           data={items}
           keyExtractor={(i) => i.id}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} tintColor={colors.brand} />}
-          contentContainerStyle={styles.list}
+          contentContainerStyle={[styles.list, webContent]}
           renderItem={({ item }) => (
             <TouchableOpacity
               testID={`customer-row-${item.id}`}
@@ -119,6 +134,19 @@ const styles = StyleSheet.create({
     paddingBottom: spacing.sm,
   },
   title: { fontSize: 28, fontWeight: "600", color: colors.onSurface, letterSpacing: -0.5 },
+  headerActions: { flexDirection: "row", alignItems: "center", gap: spacing.sm },
+  csvBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    borderRadius: radius.pill,
+    borderWidth: 1,
+    borderColor: colors.brand,
+    backgroundColor: colors.brandTertiary,
+  },
+  csvBtnText: { color: colors.brand, fontWeight: "500", fontSize: typography.sm },
   newBtn: {
     flexDirection: "row",
     alignItems: "center",

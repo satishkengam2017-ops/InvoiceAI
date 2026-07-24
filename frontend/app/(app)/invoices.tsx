@@ -15,10 +15,12 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { EmptyState } from "@/src/components/Card";
+import { DateField } from "@/src/components/DateField";
 import { StatusPill } from "@/src/components/StatusPill";
 import { api } from "@/src/lib/api";
+import { downloadCsv, toCsv, todayStamp } from "@/src/lib/csv";
 import { formatMoney } from "@/src/lib/money";
-import { colors, radius, spacing, typography } from "@/src/lib/theme";
+import { colors, radius, spacing, typography, webContent } from "@/src/lib/theme";
 import type { Invoice, InvoiceStatus } from "@/src/lib/types";
 
 const FILTERS: ({ key: "ALL"; label: string } | { key: InvoiceStatus; label: string })[] = [
@@ -37,11 +39,15 @@ export default function Invoices() {
   const [refreshing, setRefreshing] = useState(false);
   const [filter, setFilter] = useState<"ALL" | InvoiceStatus>("ALL");
   const [search, setSearch] = useState("");
+  const [fromDate, setFromDate] = useState("");
+  const [toDate, setToDate] = useState("");
 
   const load = useCallback(async () => {
     try {
       const data = await api.get<Invoice[]>("/invoices");
       setItems(data);
+    } catch {
+      /* ignore — AuthContext redirects if the session is invalid */
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -61,9 +67,40 @@ export default function Invoices() {
     });
   }, [items, filter, search]);
 
+  const exportCsv = async () => {
+    // ISO YYYY-MM-DD strings compare correctly as plain strings.
+    const inRange = (inv: Invoice) => {
+      const d = inv.issue_date || (inv.created_at || "").slice(0, 10);
+      if (fromDate.trim() && d < fromDate.trim()) return false;
+      if (toDate.trim() && d > toDate.trim()) return false;
+      return true;
+    };
+    const rows = filtered.filter(inRange).map((inv) => {
+      const lineDesc = inv.line_items
+        .map((li) => `${li.quantity} x ${li.name}${li.description ? ` (${li.description})` : ""}`)
+        .join("; ");
+      const invoiceStatus = inv.status === "PAID" ? "Paid" : inv.status === "VOID" ? "Void" : "Unpaid";
+      const payStatus =
+        inv.status === "PAID" ? "Paid" : (inv.amount_paid_cents || 0) > 0 ? "Partially Paid" : "Unpaid";
+      return [
+        inv.issue_date,
+        invoiceStatus,
+        inv.customer?.name || "",
+        lineDesc,
+        formatMoney(inv.total_cents, inv.currency),
+        payStatus,
+      ];
+    });
+    const csv = toCsv(
+      ["Invoice Date", "Invoice Status", "Customer Name", "Description / Line Items", "Amount Charged", "Payment Status"],
+      rows
+    );
+    await downloadCsv(`invoices_report_${todayStamp()}.csv`, csv);
+  };
+
   return (
     <SafeAreaView style={styles.safe} edges={["top"]}>
-      <View style={styles.header}>
+      <View style={[styles.header, webContent]}>
         <Text style={styles.title}>Invoices</Text>
         <TouchableOpacity testID="invoices-new-btn" onPress={() => router.push("/invoices/new")} style={styles.newBtn} activeOpacity={0.85}>
           <Feather name="plus" size={16} color={colors.onBrandPrimary} />
@@ -71,7 +108,7 @@ export default function Invoices() {
         </TouchableOpacity>
       </View>
 
-      <View style={styles.searchWrap}>
+      <View style={[styles.searchWrap, webContent]}>
         <Feather name="search" size={16} color={colors.muted} />
         <TextInput
           testID="invoices-search"
@@ -83,11 +120,25 @@ export default function Invoices() {
         />
       </View>
 
+      {/* Report export: date range + CSV download */}
+      <View style={[styles.exportRow, webContent]}>
+        <View style={styles.dateFieldWrap}>
+          <DateField testID="invoices-from-date" placeholder="From date" value={fromDate} onChange={setFromDate} maximumDate={toDate ? new Date(toDate) : undefined} />
+        </View>
+        <View style={styles.dateFieldWrap}>
+          <DateField testID="invoices-to-date" placeholder="To date" value={toDate} onChange={setToDate} minimumDate={fromDate ? new Date(fromDate) : undefined} />
+        </View>
+        <TouchableOpacity testID="invoices-download-csv" style={styles.csvBtn} onPress={exportCsv} activeOpacity={0.85}>
+          <Feather name="download" size={14} color={colors.brand} />
+          <Text style={styles.csvBtnText}>Download CSV</Text>
+        </TouchableOpacity>
+      </View>
+
       <ScrollView
         horizontal
         showsHorizontalScrollIndicator={false}
         contentContainerStyle={styles.chipsRow}
-        style={styles.chipsScroll}
+        style={[styles.chipsScroll, webContent]}
       >
         {FILTERS.map((f) => {
           const active = filter === f.key;
@@ -118,7 +169,7 @@ export default function Invoices() {
           data={filtered}
           keyExtractor={(i) => i.id}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} tintColor={colors.brand} />}
-          contentContainerStyle={styles.list}
+          contentContainerStyle={[styles.list, webContent]}
           renderItem={({ item }) => (
             <TouchableOpacity
               testID={`invoice-card-${item.number}`}
@@ -177,6 +228,26 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.md,
   },
   searchInput: { flex: 1, height: 44, color: colors.onSurface, fontSize: typography.base },
+  exportRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.sm,
+    marginHorizontal: spacing.lg,
+    marginTop: spacing.sm,
+  },
+  dateFieldWrap: { flex: 1 },
+  csvBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    height: 48,
+    paddingHorizontal: spacing.md,
+    borderRadius: radius.pill,
+    borderWidth: 1,
+    borderColor: colors.brand,
+    backgroundColor: colors.brandTertiary,
+  },
+  csvBtnText: { color: colors.brand, fontWeight: "500", fontSize: typography.sm },
   chipsScroll: { flexGrow: 0, marginTop: spacing.sm, maxHeight: 56 },
   chipsRow: { paddingHorizontal: spacing.lg, gap: spacing.sm, alignItems: "center", height: 56 },
   chip: {

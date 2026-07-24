@@ -20,7 +20,7 @@ import { EmptyState } from "@/src/components/Card";
 import { Input } from "@/src/components/Input";
 import { api } from "@/src/lib/api";
 import { formatMoney, parseCents } from "@/src/lib/money";
-import { colors, radius, spacing, typography } from "@/src/lib/theme";
+import { colors, radius, spacing, typography, webContent } from "@/src/lib/theme";
 import type { CatalogItem } from "@/src/lib/types";
 
 export default function Catalog() {
@@ -33,6 +33,8 @@ export default function Catalog() {
     try {
       const data = await api.get<CatalogItem[]>("/catalog");
       setItems(data);
+    } catch {
+      /* ignore — AuthContext redirects if the session is invalid */
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -43,7 +45,7 @@ export default function Catalog() {
 
   return (
     <SafeAreaView style={styles.safe} edges={["top"]}>
-      <View style={styles.header}>
+      <View style={[styles.header, webContent]}>
         <Text style={styles.title}>Catalog</Text>
         <TouchableOpacity testID="catalog-add-btn" onPress={() => setShowAdd(true)} style={styles.newBtn}>
           <Feather name="plus" size={16} color={colors.onBrandPrimary} />
@@ -65,7 +67,7 @@ export default function Catalog() {
           data={items}
           keyExtractor={(i) => i.id}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} tintColor={colors.brand} />}
-          contentContainerStyle={styles.list}
+          contentContainerStyle={[styles.list, webContent]}
           renderItem={({ item }) => (
             <View testID={`catalog-item-${item.id}`} style={styles.row}>
               <View style={{ flex: 1 }}>

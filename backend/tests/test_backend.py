@@ -59,6 +59,10 @@ class TestAuth:
         assert "business_id" in body and body["business_id"]
         assert "_id" not in body
 
+    def test_clerk_exchange_with_invalid_token_returns_401(self, api_client):
+        r = api_client.post(f"{API}/auth/clerk-exchange", json={"clerk_token": "not-a-real-token"})
+        assert r.status_code in (401, 503)
+
 
 # ---------------------------------------------------------------------------
 # Business + Settings

@@ -17,11 +17,12 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { AddCustomerModal } from "@/src/components/AddCustomerModal";
 import { Button } from "@/src/components/Button";
 import { Card } from "@/src/components/Card";
+import { DateField } from "@/src/components/DateField";
 import { Input } from "@/src/components/Input";
 import { useAuth } from "@/src/context/AuthContext";
 import { api } from "@/src/lib/api";
 import { computeTotals, formatMoney, parseCents } from "@/src/lib/money";
-import { colors, radius, spacing, typography } from "@/src/lib/theme";
+import { colors, radius, spacing, typography, webContent } from "@/src/lib/theme";
 import type { CatalogItem, Customer, Invoice, LineItemDto } from "@/src/lib/types";
 
 type Mode = "AI" | "MANUAL";
@@ -164,7 +165,7 @@ export default function NewInvoice() {
       </View>
 
       {/* Mode toggle */}
-      <View style={styles.modeRow}>
+      <View style={[styles.modeRow, webContent]}>
         <TouchableOpacity
           testID="mode-ai"
           onPress={() => setMode("AI")}
@@ -184,7 +185,7 @@ export default function NewInvoice() {
       </View>
 
       <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={{ flex: 1 }}>
-        <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
+        <ScrollView contentContainerStyle={[styles.scroll, webContent]} keyboardShouldPersistTaps="handled">
           {mode === "AI" ? (
             <>
               <Text style={styles.helper}>
@@ -325,10 +326,10 @@ export default function NewInvoice() {
                 <Text style={styles.sectionTitle}>Details</Text>
                 <View style={{ flexDirection: "row", gap: spacing.md }}>
                   <View style={{ flex: 1 }}>
-                    <Input testID="invoice-issue-date" label="Issue date (YYYY-MM-DD)" value={issueDate} onChangeText={setIssueDate} placeholder="auto" />
+                    <DateField testID="invoice-issue-date" label="Issue date" value={issueDate} onChange={setIssueDate} placeholder="auto" maximumDate={dueDate ? new Date(dueDate) : undefined} />
                   </View>
                   <View style={{ flex: 1 }}>
-                    <Input testID="invoice-due-date" label="Due date (YYYY-MM-DD)" value={dueDate} onChangeText={setDueDate} placeholder="auto" />
+                    <DateField testID="invoice-due-date" label="Due date" value={dueDate} onChange={setDueDate} placeholder="auto" minimumDate={issueDate ? new Date(issueDate) : undefined} />
                   </View>
                 </View>
                 <Input testID="invoice-notes" label="Notes" multiline value={notes} onChangeText={setNotes} />
