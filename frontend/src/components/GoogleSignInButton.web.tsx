@@ -18,10 +18,19 @@ export function GoogleSignInButton({ onError }: Props) {
   const onPress = async () => {
     setBusy(true);
     try {
-      const { createdSessionId, setActive } = await startSSOFlow({ strategy: "oauth_google" });
+      const { createdSessionId, setActive, signIn, signUp } = await startSSOFlow({
+        strategy: "oauth_google",
+      });
       if (!createdSessionId || !setActive) {
-        // User closed the popup, or Clerk needs another step (e.g. MFA) —
-        // not an error, just stop here.
+        // Clerk returns a signIn/signUp object with a status (e.g.
+        // "needs_second_factor", "missing_requirements") when the flow got
+        // partway through but needs another step we don't support yet — show
+        // a neutral message rather than leaving the user staring at nothing.
+        // With no status at all, the user simply closed the popup: stay silent.
+        const status = signIn?.status || signUp?.status;
+        if (status) {
+          onError("Sign-in didn't complete. Please try again.");
+        }
         return;
       }
       await setActive({ session: createdSessionId });
