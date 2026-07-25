@@ -104,11 +104,13 @@ export default function InvoiceDetail() {
 
       if (Platform.OS === "web") {
         // mailto: links cannot carry attachments (a hard browser limitation),
-        // so also open the print-ready invoice in a separate tab so the user
-        // can save it as a PDF and attach it themselves in the mail client
-        // that's about to open.
-        openHtmlInNewTab(invoiceHtml(invoice, business as Business), true);
-        const params = new URLSearchParams({ subject, body });
+        // so the backend renders the invoice to a PDF, hosts it on Supabase
+        // Storage, and we link to it in the email body instead.
+        const { url } = await api.post<{ url: string }>(`/invoices/${invoice.id}/email-pdf`, {
+          html: invoiceHtml(invoice, business as Business),
+        });
+        const linkedBody = `${body} Download your invoice here: ${url}`;
+        const params = new URLSearchParams({ subject, body: linkedBody });
         await Linking.openURL(`mailto:${recipientEmail ?? ""}?${params.toString()}`);
       } else {
         // Generate the actual PDF and hand it to the OS's native mail
