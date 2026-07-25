@@ -29,7 +29,17 @@ export default function Root({ children }: PropsWithChildren) {
               body {
                 background: #f5f5f3;
               }
-              body > div {
+              /* Scoped to #root (the RNW mount) and #clerk-components
+                 (Clerk's modal portal, only once it actually holds a modal)
+                 rather than a blanket "body > div" — any OTHER sibling div
+                 a browser extension injects (password managers, ad
+                 blockers, etc. routinely add one) would otherwise also get
+                 this full opaque window treatment and, being later in DOM
+                 order, paint over the real app content. #clerk-components
+                 stays childless until a modal opens, so :not(:empty) keeps
+                 it inert until then. */
+              body > div#root,
+              body > div#clerk-components:not(:empty) {
                 position: fixed !important;
                 top: 28px !important;
                 bottom: 28px !important;
@@ -49,7 +59,8 @@ export default function Root({ children }: PropsWithChildren) {
 
               /* Smaller screens: full-bleed app, no window chrome. */
               @media (max-width: 1023px) {
-                body > div {
+                body > div#root,
+                body > div#clerk-components:not(:empty) {
                   top: 0 !important;
                   bottom: 0 !important;
                   left: 0 !important;
