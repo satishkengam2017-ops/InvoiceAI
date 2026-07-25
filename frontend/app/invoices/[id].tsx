@@ -1,5 +1,6 @@
 import { Feather } from "@expo/vector-icons";
 import { useLocalSearchParams, useRouter } from "expo-router";
+import * as MailComposer from "expo-mail-composer";
 import * as Sharing from "expo-sharing";
 import React, { useCallback, useEffect, useState } from "react";
 import {
@@ -91,34 +92,48 @@ export default function InvoiceDetail() {
     }
   };
 
-  const sharePdf = async () => {
-    if (!invoice) return;
+  const sendEmail = async () => {
+    if (!invoice || !business) return;
     setBusy(true);
     try {
+      const subject = `Invoice ${invoice.number} from ${business.name}`;
+      const customerName = invoice.customer?.name ?? "there";
+      const total = formatMoney(invoice.total_cents, invoice.currency);
+      const body = `Hi ${customerName}, please find attached Invoice ${invoice.number} for ${total}. Thank you!`;
+      const recipientEmail = invoice.customer?.email ?? undefined;
+
       if (Platform.OS === "web") {
-        // Browsers can't attach a locally generated PDF without a PDF library;
-        // open the print-ready invoice so the user can save/share it as PDF
-        // (the document title makes the suggested filename Invoice-<number>.pdf).
-        openHtmlInNewTab(invoiceHtml(invoice, business as Business), true);
+        // mailto: links cannot carry attachments (a hard browser limitation),
+        // so the backend renders the invoice to a PDF, hosts it on Supabase
+        // Storage, and we link to it in the email body instead — the body
+        // wording says "here" rather than "attached" since nothing is
+        // actually attached on web, unlike the native branch below.
+        const { url } = await api.post<{ url: string }>(`/invoices/${invoice.id}/email-pdf`, {
+          html: invoiceHtml(invoice, business as Business),
+        });
+        const webBody = `Hi ${customerName}, please find your invoice here: ${url}. Total due: ${total}. Thank you!`;
+        const params = new URLSearchParams({ subject, body: webBody });
+        await Linking.openURL(`mailto:${recipientEmail ?? ""}?${params.toString()}`);
       } else {
-        // Generate the actual PDF and hand it to the native share sheet, so the
-        // recipient gets Invoice-<number>.pdf as a real attachment (Mail,
-        // WhatsApp, Messages, AirDrop, Drive, ...).
-        const { uri, fileName } = await generateInvoicePdfFile(invoice, business as Business);
-        const canShare = await Sharing.isAvailableAsync();
-        if (!canShare) {
-          Alert.alert("Sharing unavailable", "Sharing isn't available on this device.");
+        // Generate the actual PDF and hand it to the OS's native mail
+        // composer directly (not the generic share sheet), so the recipient
+        // gets Invoice-<number>.pdf as a real attachment on a pre-filled email.
+        const { uri } = await generateInvoicePdfFile(invoice, business as Business);
+        const canCompose = await MailComposer.isAvailableAsync();
+        if (!canCompose) {
+          Alert.alert("Email unavailable", "No mail app is configured on this device.");
           return;
         }
-        await Sharing.shareAsync(uri, {
-          mimeType: "application/pdf",
-          dialogTitle: `Send ${fileName}`,
-          UTI: "com.adobe.pdf",
+        await MailComposer.composeAsync({
+          recipients: recipientEmail ? [recipientEmail] : [],
+          subject,
+          body,
+          attachments: [uri],
         });
       }
       await markSentIfDraft();
     } catch (e) {
-      Alert.alert("Share failed", e instanceof Error ? e.message : "Unknown error");
+      Alert.alert("Send failed", e instanceof Error ? e.message : "Unknown error");
     } finally {
       setBusy(false);
     }
@@ -327,14 +342,14 @@ export default function InvoiceDetail() {
             <Text style={[styles.actionBtnText, { color: colors.brand }]}>Download PDF</Text>
           </TouchableOpacity>
           <TouchableOpacity
-            testID="invoice-share-btn"
+            testID="invoice-send-email-btn"
             style={styles.actionBtn}
-            onPress={sharePdf}
+            onPress={sendEmail}
             disabled={busy}
             activeOpacity={0.85}
           >
-            <Feather name="share-2" size={20} color={colors.onBrandPrimary} />
-            <Text style={styles.actionBtnText}>Share PDF</Text>
+            <Feather name="mail" size={20} color={colors.onBrandPrimary} />
+            <Text style={styles.actionBtnText}>Send Email</Text>
           </TouchableOpacity>
           {!isPaid ? (
             <TouchableOpacity

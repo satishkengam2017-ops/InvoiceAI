@@ -107,5 +107,9 @@ class MarkPaidIn(BaseModel):
     method: str = "manual"
 
 
+class EmailPdfIn(BaseModel):
+    html: str
+
+
 class ClerkExchangeIn(BaseModel):
     clerk_token: str

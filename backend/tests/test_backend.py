@@ -375,6 +375,25 @@ class TestInvoicesLifecycle:
         names = [li["name"] for li in r.json()["line_items"]]
         assert names == ["New Replacement"], names
 
+    def test_email_pdf_from_other_business_rejected(self, auth_client, fresh_business):
+        # Regression test: POST /invoices/{id}/email-pdf must be scoped by
+        # business_id like every other invoice route. The 404 check runs
+        # before any PDF rendering or Supabase Storage upload is attempted,
+        # so this needs no external infra beyond the app itself.
+        s = fresh_business["session"]
+        cid = self._make_customer(s)
+        r = s.post(f"{API}/invoices", json={
+            "customer_id": cid,
+            "line_items": [{"name": "Item", "quantity": 1, "unit_price_cents": 1000}],
+        })
+        assert r.status_code == 200, r.text
+        invoice_id = r.json()["id"]
+
+        r = auth_client.post(f"{API}/invoices/{invoice_id}/email-pdf", json={
+            "html": "<html><body>Should not render</body></html>",
+        })
+        assert r.status_code == 404
+
 
 # ---------------------------------------------------------------------------
 # Dashboard
