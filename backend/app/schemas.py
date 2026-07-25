@@ -35,6 +35,7 @@ class BusinessUpdate(BaseModel):
     phone: Optional[str] = None
     website: Optional[str] = None
     logo_url: Optional[str] = None
+    gst_hst_number: Optional[str] = None
     address_line1: Optional[str] = None
     city: Optional[str] = None
     region: Optional[str] = None
