@@ -374,7 +374,12 @@ async def email_pdf(
 
     supabase_url = os.environ["SUPABASE_URL"].rstrip("/")
     service_key = os.environ["SUPABASE_SERVICE_ROLE_KEY"]
-    object_path = f"{biz_id}/{inv.number}.pdf"
+    # inv.id (not inv.number) in the path: invoice numbers are influenced by
+    # the tenant-settable, unsanitized Business.invoice_prefix field, so a
+    # malicious business could otherwise inject "/" or "../" into a shared
+    # public bucket's object path. inv.id is a database-generated UUID with
+    # no user-controlled content, so it's safe by construction.
+    object_path = f"{biz_id}/{inv.id}.pdf"
     upload_url = f"{supabase_url}/storage/v1/object/InvoiceAI/{object_path}"
 
     async with httpx.AsyncClient() as client:
