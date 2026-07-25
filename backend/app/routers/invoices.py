@@ -1,9 +1,13 @@
 """Invoice routes: CRUD, line items, totals engine, plan-limit-gated
 create/duplicate, mark-paid/send/void.
 """
+import asyncio
+import ipaddress
 import os
+import socket
 from datetime import date, datetime, timedelta, timezone
 from typing import List, Optional
+from urllib.parse import urlparse
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException
@@ -354,6 +358,45 @@ async def duplicate_invoice(invoice_id: str, ctx: dict = Depends(get_business), 
     return await _serialize_invoice(db, result_inv)
 
 
+def _is_blocked_address(ip_str: str) -> bool:
+    try:
+        ip = ipaddress.ip_address(ip_str)
+    except ValueError:
+        return True  # unparseable -> fail closed
+    return ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved or ip.is_multicast or ip.is_unspecified
+
+
+async def _is_blocked_host(hostname: Optional[str]) -> bool:
+    """SSRF guard for email_pdf's Chromium instance: this endpoint renders
+    client-supplied HTML with network access enabled (needed for
+    business.logo_url, the only legitimate external fetch invoiceHtml()
+    embeds) - without this, any authenticated business could point an <img>
+    at an internal service or cloud metadata endpoint (e.g. 169.254.169.254)
+    and have the response rendered straight into the returned PDF."""
+    if not hostname:
+        return True
+    try:
+        # Resolving here (rather than just regexing the URL string) also
+        # blocks a hostname that merely *resolves* to a private/link-local
+        # address, not just a literal IP in the URL.
+        infos = await asyncio.to_thread(socket.getaddrinfo, hostname, None)
+    except socket.gaierror:
+        return True  # can't resolve -> fail closed
+    return any(_is_blocked_address(info[4][0]) for info in infos)
+
+
+async def _block_private_network_requests(route) -> None:
+    url = route.request.url
+    if url.startswith(("data:", "about:", "blob:")):
+        await route.continue_()
+        return
+    hostname = urlparse(url).hostname
+    if await _is_blocked_host(hostname):
+        await route.abort()
+    else:
+        await route.continue_()
+
+
 @router.post("/{invoice_id}/email-pdf")
 async def email_pdf(
     invoice_id: str, payload: EmailPdfIn, ctx: dict = Depends(get_business), db: AsyncSession = Depends(get_db)
@@ -367,6 +410,7 @@ async def email_pdf(
         browser = await p.chromium.launch()
         try:
             page = await browser.new_page()
+            await page.route("**/*", _block_private_network_requests)
             await page.set_content(payload.html, wait_until="networkidle")
             pdf_bytes = await page.pdf(format="A4", print_background=True)
         finally:
