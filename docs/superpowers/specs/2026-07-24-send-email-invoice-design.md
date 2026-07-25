@@ -30,7 +30,7 @@ Uses `expo-mail-composer` (already added as a dependency). On press:
 
 1. Frontend builds the invoice HTML the same way it already does for printing: `invoiceHtml(invoice, business)` (existing helper, unchanged).
 2. Frontend `POST`s that HTML to a new backend endpoint: `POST /api/invoices/{id}/email-pdf`, body `{ "html": "<the HTML string>" }`. Auth: same JWT bearer token as every other API call (`get_business` dependency, scoped to the invoice's own business — same tenant-isolation rule as the rest of the invoices router).
-3. Backend renders that HTML to a PDF using `weasyprint` (new Python dependency), uploads the PDF bytes to the `InvoiceAI` Supabase Storage bucket at path `{business_id}/{invoice.number}.pdf` (namespaced per business so paths never collide across tenants, matching the multi-tenant discipline used everywhere else in this codebase — invoice numbers are already unique per business, so no extra UUID segment is needed), and returns `{ "url": "<public URL>" }`. The bucket is public, so the returned URL is a plain, permanent, unauthenticated download link — no signing, no expiry. Re-sending an invoice's email overwrites the same path with the latest PDF, which is the desired behavior (the link should always reflect the invoice's current state).
+3. Backend renders that HTML to a PDF using Playwright's headless Chromium (new Python dependency: `playwright`), uploads the PDF bytes to the `InvoiceAI` Supabase Storage bucket at path `{business_id}/{invoice.number}.pdf` (namespaced per business so paths never collide across tenants, matching the multi-tenant discipline used everywhere else in this codebase — invoice numbers are already unique per business, so no extra UUID segment is needed), and returns `{ "url": "<public URL>" }`. The bucket is public, so the returned URL is a plain, permanent, unauthenticated download link — no signing, no expiry. Re-sending an invoice's email overwrites the same path with the latest PDF, which is the desired behavior (the link should always reflect the invoice's current state).
 4. Frontend opens a `mailto:` link (`Linking.openURL`) with the same subject as before, and a body that now includes the hosted URL, e.g.: `` `Hi ${customerName}, please find your invoice here: ${url}. Total due: ${total}. Thank you!` ``. No separate tab is opened, and nothing is auto-printed.
 5. If the backend call fails (network error, weasyprint error, Storage upload error), show the existing `Alert.alert("Send failed", ...)` and do not attempt to open `mailto:` at all — a broken link is worse than no email.
 
@@ -45,16 +45,18 @@ Sending the email marks a DRAFT invoice as SENT afterward, via the existing `mar
   - Response: `{ "url": str }`.
   - Auth/scoping: identical pattern to every other route in this file — `ctx: dict = Depends(get_business)`, `db: AsyncSession = Depends(get_db)`, looks up the invoice via `_get_invoice_with_items(db, invoice_id, biz_id)` and 404s if not found/not owned by the caller's business. The `html` in the request body is trusted only insofar as it's rendered to a PDF and uploaded — it is never persisted to the database or reflected back to any other user, so it carries no injection/XSS risk beyond what the requesting user already had authority over (their own browser tab).
 - New environment variables (`backend/.env`, already added by the user): `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`. Used only by this one endpoint, via Supabase's Storage REST API (`POST {SUPABASE_URL}/storage/v1/object/{bucket}/{path}` with `Authorization: Bearer {SUPABASE_SERVICE_ROLE_KEY}`), called with `httpx.AsyncClient` (new dependency — keeps this async-first codebase's pattern rather than blocking on `requests`).
-- New Python dependencies: `weasyprint`, `httpx`.
+- New Python dependencies: `playwright`, `httpx`. Playwright additionally requires a one-time `playwright install chromium` step to download the browser binary (not a pip-managed system library, so it installs cleanly on Windows/macOS/Linux alike).
 
 ## Error handling
 
-- Backend: if weasyprint rendering fails, or the Supabase Storage upload returns a non-2xx status, raise `HTTPException(502, ...)` — matches the existing pattern used by the AI extraction route (`ai.py`) for a downstream-service failure.
+- Backend: if PDF rendering fails, or the Supabase Storage upload returns a non-2xx status, raise `HTTPException(502, ...)` — matches the existing pattern used by the AI extraction route (`ai.py`) for a downstream-service failure.
 - Frontend: unchanged try/catch/`Alert.alert("Send failed", ...)`/`finally { setBusy(false) }` pattern already used by `sendEmail`.
 
-## Known platform caveat
+## Revision note (2026-07-25, second revision)
 
-`weasyprint` depends on system libraries (Pango, Cairo, GDK-Pixbuf via GTK) that are straightforward to install on Linux (the deployment target) but can require an extra runtime install on Windows for local development. This is called out explicitly in the implementation plan's verification steps — if it blocks local testing on a given Windows machine, the fallback is to verify via the deployed/Linux environment instead, not to swap the library.
+The first attempt at this endpoint used `weasyprint` for HTML→PDF rendering. Live implementation surfaced a real, unavoidable blocker: WeasyPrint requires the GTK3 runtime (Pango/Cairo/GDK-Pixbuf), which isn't installed on the Windows development machine and isn't distributable via `pip` — confirmed via a failed live verification attempt (`OSError: cannot load library 'pango-1.0-0'`), not a hypothetical concern. Since `app/main.py` imports every router eagerly at module scope, this broke the entire backend's ability to start locally, not just the new endpoint.
+
+Switched to Playwright's headless Chromium instead: it installs cleanly on Windows via `pip install playwright && playwright install chromium` (a browser binary download, not a system library link), and it renders with the same browser-engine class already used by the existing web "print to PDF" flow, arguably a better fidelity match than WeasyPrint would have been. Trade-off: a browser launch per request (a few hundred ms to ~1-2s), acceptable for an infrequent user-triggered action like sending an invoice email — not a high-throughput endpoint.
 
 ## Testing
 

@@ -4,9 +4,11 @@
 
 **Goal:** Replace the web branch of `sendEmail` (currently: open a printable tab + `mailto:` with no attachment) with a backend-generated, Supabase-Storage-hosted PDF link included directly in the `mailto:` body.
 
-**Architecture:** New FastAPI route on the existing `invoices` router renders client-supplied HTML to a PDF with `weasyprint` and uploads it to a public Supabase Storage bucket via its REST API, returning a public URL. The frontend's web branch calls this route instead of opening a printable tab, then includes the returned URL in the `mailto:` body.
+**Architecture:** New FastAPI route on the existing `invoices` router renders client-supplied HTML to a PDF using Playwright's headless Chromium and uploads it to a public Supabase Storage bucket via its REST API, returning a public URL. The frontend's web branch calls this route instead of opening a printable tab, then includes the returned URL in the `mailto:` body.
 
-**Tech Stack:** FastAPI, `weasyprint` (new), `httpx` (new), Supabase Storage REST API, React Native Web, `Linking.openURL`.
+**Tech Stack:** FastAPI, `playwright` (new), `httpx` (new), Supabase Storage REST API, React Native Web, `Linking.openURL`.
+
+**Revision note:** this plan originally specified `weasyprint` for PDF rendering. A live implementation attempt (Task 3) hit a real, unavoidable blocker: WeasyPrint requires the GTK3 runtime, absent on the Windows dev machine and not pip-installable — confirmed via `OSError: cannot load library 'pango-1.0-0'`, not a hypothetical. Task 3 below has been rewritten to use Playwright's headless Chromium instead, which installs cleanly on Windows via pip + a binary download (no system library linking). See the design spec's second revision note for full detail.
 
 ## Global Constraints
 
@@ -21,7 +23,7 @@
 ### Task 3: Backend `POST /invoices/{invoice_id}/email-pdf` endpoint
 
 **Files:**
-- Modify: `backend/requirements.txt` (add `weasyprint`, `httpx`)
+- Modify: `backend/requirements.txt` (add `playwright`, `httpx`)
 - Modify: `backend/app/schemas.py` (add `EmailPdfIn`)
 - Modify: `backend/app/routers/invoices.py` (add the route)
 
@@ -34,7 +36,7 @@
 Append to `backend/requirements.txt`:
 
 ```
-weasyprint==62.3
+playwright==1.49.1
 httpx==0.28.1
 ```
 
@@ -42,6 +44,7 @@ Run, from `backend/`:
 
 ```bash
 .venv\Scripts\python.exe -m pip install -r requirements.txt
+.venv\Scripts\python.exe -m playwright install chromium
 ```
 
 If this is a fresh worktree without a `.venv` yet, create one first:
@@ -49,9 +52,10 @@ If this is a fresh worktree without a `.venv` yet, create one first:
 ```bash
 python -m venv .venv
 .venv\Scripts\python.exe -m pip install -r requirements.txt
+.venv\Scripts\python.exe -m playwright install chromium
 ```
 
-Expected: install succeeds. **If `weasyprint`'s install or import fails on Windows due to missing system libraries (Pango/Cairo/GDK-Pixbuf)**, this is a known, documented platform caveat (see the design spec) — do not swap the library or work around it with a different rendering approach; instead report this clearly as a concern in your task report so the controller can decide whether to verify on a different environment (e.g. WSL, or the eventual Linux deployment target) rather than blocking on it.
+Expected: `pip install` succeeds, then `playwright install chromium` downloads the Chromium browser binary (a few hundred MB — this step needs internet access and can take a couple of minutes; it does not require any system-level package manager or admin rights on Windows).
 
 - [ ] **Step 2: Add the `EmailPdfIn` schema**
 
@@ -70,7 +74,7 @@ In `backend/app/routers/invoices.py`, add these imports to the top of the file, 
 import os
 
 import httpx
-from weasyprint import HTML
+from playwright.async_api import async_playwright
 ```
 
 (Full updated import block for reference — only the three lines above are new, everything else already exists:)
@@ -85,10 +89,10 @@ from typing import List, Optional
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException
+from playwright.async_api import async_playwright
 from sqlalchemy import select, update as sql_update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
-from weasyprint import HTML
 
 from app.auth import get_business
 from app.db import get_db, to_dict
@@ -109,7 +113,14 @@ async def email_pdf(
     if not inv:
         raise HTTPException(status_code=404, detail="Invoice not found")
 
-    pdf_bytes = HTML(string=payload.html).write_pdf()
+    async with async_playwright() as p:
+        browser = await p.chromium.launch()
+        try:
+            page = await browser.new_page()
+            await page.set_content(payload.html, wait_until="networkidle")
+            pdf_bytes = await page.pdf(format="A4", print_background=True)
+        finally:
+            await browser.close()
 
     supabase_url = os.environ["SUPABASE_URL"].rstrip("/")
     service_key = os.environ["SUPABASE_SERVICE_ROLE_KEY"]
@@ -132,6 +143,8 @@ async def email_pdf(
     public_url = f"{supabase_url}/storage/v1/object/public/InvoiceAI/{object_path}"
     return {"url": public_url}
 ```
+
+Note: launching a fresh browser per request (rather than keeping one alive across requests via `app/main.py`'s startup/shutdown lifecycle) is a deliberate simplicity choice — this endpoint is called only when a user clicks "Send Email" (low volume), not on a hot path, so the few-hundred-ms launch cost per call isn't worth the added complexity of managing shared browser-process lifecycle state. Do not "optimize" this into a shared instance as part of this task.
 
 - [ ] **Step 4: Static verification**
 
