@@ -107,7 +107,13 @@ export type DashboardSummary = {
   overdue_cents: number;
   total_paid_cents: number;
   invoice_count: number;
-  chart_months: { year: number; month: number; revenue_cents: number; label: string }[];
+  chart_days: { range_label: string; total_cents: number; days: { day: number; revenue_cents: number }[] };
+  chart_year: {
+    range_label: string;
+    total_cents: number;
+    current_month: number;
+    months: { year: number; month: number; revenue_cents: number; label: string }[];
+  };
   plan: Plan;
   plan_usage: { used: number; limit: number; scope: string; over: boolean };
 };
