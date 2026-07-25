@@ -1,10 +1,13 @@
 """Invoice routes: CRUD, line items, totals engine, plan-limit-gated
 create/duplicate, mark-paid/send/void.
 """
+import os
 from datetime import date, datetime, timedelta, timezone
 from typing import List, Optional
 
+import httpx
 from fastapi import APIRouter, Depends, HTTPException
+from playwright.async_api import async_playwright
 from sqlalchemy import select, update as sql_update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -13,7 +16,7 @@ from app.auth import get_business
 from app.db import get_db, to_dict
 from app.models import Business, Customer, Invoice, LineItem, Payment, new_id
 from app.routers.business import check_plan_limit
-from app.schemas import InvoiceIn, MarkPaidIn
+from app.schemas import EmailPdfIn, InvoiceIn, MarkPaidIn
 
 router = APIRouter(prefix="/invoices", tags=["invoices"])
 
@@ -349,3 +352,43 @@ async def duplicate_invoice(invoice_id: str, ctx: dict = Depends(get_business), 
     await db.commit()
     result_inv = await _get_invoice_with_items(db, new_invoice.id, biz_id)
     return await _serialize_invoice(db, result_inv)
+
+
+@router.post("/{invoice_id}/email-pdf")
+async def email_pdf(
+    invoice_id: str, payload: EmailPdfIn, ctx: dict = Depends(get_business), db: AsyncSession = Depends(get_db)
+):
+    biz_id = ctx["business"]["id"]
+    inv = await _get_invoice_with_items(db, invoice_id, biz_id)
+    if not inv:
+        raise HTTPException(status_code=404, detail="Invoice not found")
+
+    async with async_playwright() as p:
+        browser = await p.chromium.launch()
+        try:
+            page = await browser.new_page()
+            await page.set_content(payload.html, wait_until="networkidle")
+            pdf_bytes = await page.pdf(format="A4", print_background=True)
+        finally:
+            await browser.close()
+
+    supabase_url = os.environ["SUPABASE_URL"].rstrip("/")
+    service_key = os.environ["SUPABASE_SERVICE_ROLE_KEY"]
+    object_path = f"{biz_id}/{inv.number}.pdf"
+    upload_url = f"{supabase_url}/storage/v1/object/InvoiceAI/{object_path}"
+
+    async with httpx.AsyncClient() as client:
+        resp = await client.post(
+            upload_url,
+            content=pdf_bytes,
+            headers={
+                "Authorization": f"Bearer {service_key}",
+                "Content-Type": "application/pdf",
+                "x-upsert": "true",
+            },
+        )
+    if resp.status_code >= 300:
+        raise HTTPException(status_code=502, detail="Failed to upload invoice PDF")
+
+    public_url = f"{supabase_url}/storage/v1/object/public/InvoiceAI/{object_path}"
+    return {"url": public_url}
