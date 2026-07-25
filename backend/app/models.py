@@ -28,6 +28,7 @@ class Business(Base):
     phone: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     website: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     logo_url: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    gst_hst_number: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     address_line1: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     city: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     region: Mapped[Optional[str]] = mapped_column(String, nullable=True)

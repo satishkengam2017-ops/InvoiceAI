@@ -1,5 +1,5 @@
 """Dashboard summary route."""
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends
 from sqlalchemy import select
@@ -42,18 +42,35 @@ async def dashboard_summary(ctx: dict = Depends(get_business), db: AsyncSession 
                 overdue += due_amt
         total_paid += paid
 
-    months = []
-    for i in range(5, -1, -1):
-        m = (month_start.month - i - 1) % 12 + 1
-        y = month_start.year + ((month_start.month - i - 1) // 12)
-        months.append({"year": y, "month": m, "revenue_cents": 0, "label": datetime(y, m, 1).strftime("%b")})
+    # chart_days: daily revenue for the most recently COMPLETED calendar
+    # month (not the current month's partial data).
+    last_month_end = month_start - timedelta(days=1)
+    last_month_start = last_month_end.replace(day=1)
+    days_in_last_month = last_month_end.day
+    chart_days = [{"day": d, "revenue_cents": 0} for d in range(1, days_in_last_month + 1)]
     for inv in invoices:
         if inv.paid_at:
-            d = inv.paid_at
-            for mrec in months:
-                if d.year == mrec["year"] and d.month == mrec["month"]:
-                    mrec["revenue_cents"] += int(inv.amount_paid_cents or 0)
-                    break
+            paid_dt = inv.paid_at if inv.paid_at.tzinfo else inv.paid_at.replace(tzinfo=timezone.utc)
+            if paid_dt.year == last_month_start.year and paid_dt.month == last_month_start.month:
+                chart_days[paid_dt.day - 1]["revenue_cents"] += int(inv.amount_paid_cents or 0)
+    chart_days_range_label = (
+        f"{last_month_start.strftime('%b')} 1 – "
+        f"{last_month_end.strftime('%b')} {days_in_last_month}, {last_month_end.year}"
+    )
+
+    # chart_year: 12 fixed calendar months of the CURRENT year (not a
+    # rolling window) - months after the current one stay at 0.
+    chart_year_months = []
+    for m in range(1, 13):
+        chart_year_months.append(
+            {"year": now.year, "month": m, "revenue_cents": 0, "label": datetime(now.year, m, 1).strftime("%b")}
+        )
+    for inv in invoices:
+        if inv.paid_at:
+            paid_dt = inv.paid_at if inv.paid_at.tzinfo else inv.paid_at.replace(tzinfo=timezone.utc)
+            if paid_dt.year == now.year:
+                chart_year_months[paid_dt.month - 1]["revenue_cents"] += int(inv.amount_paid_cents or 0)
+    chart_year_range_label = f"Jan 1 – Dec 31, {now.year}"
 
     plan_status = await check_plan_limit(db, biz_id, biz.get("plan", "FREE"))
 
@@ -64,7 +81,17 @@ async def dashboard_summary(ctx: dict = Depends(get_business), db: AsyncSession 
         "overdue_cents": overdue,
         "total_paid_cents": total_paid,
         "invoice_count": len(invoices),
-        "chart_months": months,
+        "chart_days": {
+            "range_label": chart_days_range_label,
+            "total_cents": sum(d["revenue_cents"] for d in chart_days),
+            "days": chart_days,
+        },
+        "chart_year": {
+            "range_label": chart_year_range_label,
+            "total_cents": sum(m["revenue_cents"] for m in chart_year_months),
+            "current_month": now.month,
+            "months": chart_year_months,
+        },
         "plan": biz.get("plan", "FREE"),
         "plan_usage": plan_status,
     }

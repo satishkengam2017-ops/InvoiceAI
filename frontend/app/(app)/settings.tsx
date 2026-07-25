@@ -43,6 +43,7 @@ export default function Settings() {
   const [email, setEmail] = useState(business?.email || "");
   const [currency, setCurrency] = useState(business?.currency || "USD");
   const [defaultTerms, setDefaultTerms] = useState(business?.default_terms || "");
+  const [gstHstNumber, setGstHstNumber] = useState(business?.gst_hst_number || "");
   const [stripeUrl, setStripeUrl] = useState(business?.stripe_payment_url_default || "");
   const [anthropicKey, setAnthropicKey] = useState("");
   const [plan, setPlan] = useState<Plan>(business?.plan || "FREE");
@@ -65,6 +66,7 @@ export default function Settings() {
       setEmail(business.email || "");
       setCurrency(business.currency);
       setDefaultTerms(business.default_terms || "");
+      setGstHstNumber(business.gst_hst_number || "");
       setStripeUrl(business.stripe_payment_url_default || "");
       setPlan(business.plan);
     }
@@ -82,6 +84,7 @@ export default function Settings() {
         email: email.trim(),
         currency: currency.trim().toUpperCase(),
         default_terms: defaultTerms.trim() || null,
+        gst_hst_number: gstHstNumber.trim() || null,
       });
       await refreshBusiness();
       Alert.alert("Saved", "Business profile updated.");
@@ -191,6 +194,7 @@ export default function Settings() {
               </View>
             </View>
             <Input testID="settings-terms" label="Default terms" value={defaultTerms} onChangeText={setDefaultTerms} multiline />
+            <Input testID="settings-gst-hst" label="GST/HST Registration No." value={gstHstNumber} onChangeText={setGstHstNumber} />
             <Button testID="settings-save-profile" title="Save Profile" loading={saving} onPress={saveProfile} />
           </Card>
 
