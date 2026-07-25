@@ -82,6 +82,7 @@ export type Business = {
   phone?: string | null;
   website?: string | null;
   logo_url?: string | null;
+  gst_hst_number?: string | null;
   address_line1?: string | null;
   city?: string | null;
   region?: string | null;
