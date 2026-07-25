@@ -1,0 +1,11 @@
+[build]
+  base = "frontend"
+  command = "npx expo export -p web"
+  publish = "dist"
+
+# Expo Router's web output ("single") is a client-routed SPA - every path
+# needs to fall through to the same index.html so the router can take over.
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200

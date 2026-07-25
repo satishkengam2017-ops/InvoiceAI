@@ -60,3 +60,20 @@ Backend tests run against a live server (start it first):
 cd backend
 pytest tests/test_backend.py
 ```
+
+## Deployment
+
+**Backend → Railway.** `backend/Dockerfile` builds the API (installs Python deps, then Chromium for PDF rendering) and runs Alembic migrations before starting Uvicorn on each deploy.
+
+1. In Railway, create a new project from this GitHub repo, set the service's **root directory** to `backend`.
+2. Railway builds `backend/Dockerfile` automatically and injects a `PORT` env var — no extra config needed for that.
+3. Set the same environment variables listed in the Backend section above (`DATABASE_URL`, `JWT_SECRET`, etc.) in Railway's dashboard under the service's Variables tab. Never commit these — they only ever live in Railway's dashboard or a local, gitignored `.env`.
+4. Once deployed, note the service's public URL (Railway assigns one, or attach a custom domain) — the frontend needs it next.
+
+**Frontend → Netlify.** `netlify.toml` (repo root) points Netlify at `frontend/`, runs `npx expo export -p web`, and publishes the resulting static `dist/` output, with a catch-all redirect so Expo Router's client-side routing works on refresh/deep links.
+
+1. In Netlify, create a new site from this GitHub repo — it auto-detects `netlify.toml`, no manual build settings needed.
+2. Set `EXPO_PUBLIC_BACKEND_URL` (the Railway backend's public URL from above) and `EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY` as Netlify environment variables (Site settings → Environment variables) — these are baked in at build time, not read at runtime, so a change requires a re-deploy to take effect.
+3. Deploy. Netlify assigns a URL, or attach a custom domain.
+
+Deploy the backend first so you have its URL before configuring the frontend's build.
