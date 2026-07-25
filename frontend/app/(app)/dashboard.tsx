@@ -47,7 +47,8 @@ export default function Dashboard() {
   useFocusEffect(useCallback(() => { load(); }, [load]));
 
   const currency = summary?.currency || business?.currency || "USD";
-  const maxBar = Math.max(1, ...(summary?.chart_months || []).map((m) => m.revenue_cents));
+  const maxDayBar = Math.max(1, ...(summary?.chart_days?.days || []).map((d) => d.revenue_cents));
+  const maxMonthBar = Math.max(1, ...(summary?.chart_year?.months || []).map((m) => m.revenue_cents));
 
   return (
     <SafeAreaView style={styles.safe} edges={["top"]}>
@@ -102,18 +103,68 @@ export default function Dashboard() {
               </Card>
             ) : null}
 
-            {/* Chart */}
-            <Card testID="dashboard-chart-card" style={{ marginTop: spacing.md }}>
-              <Text style={styles.sectionTitle}>Revenue (6 months)</Text>
-              <View style={styles.chartRow}>
-                {(summary?.chart_months || []).map((m) => (
-                  <View key={`${m.year}-${m.month}`} style={styles.chartCol}>
+            {/* Revenue (Last Month) */}
+            <Card testID="dashboard-chart-days-card" style={{ marginTop: spacing.md }}>
+              <View style={styles.chartHeader}>
+                <Text style={styles.sectionTitle}>Revenue (Last Month)</Text>
+                <View style={styles.rangeBadge}>
+                  <Feather name="calendar" size={12} color={colors.muted} />
+                  <Text style={styles.rangeBadgeText}>{summary?.chart_days?.range_label}</Text>
+                </View>
+              </View>
+              <Text style={styles.chartTotal}>{formatMoney(summary?.chart_days?.total_cents || 0, currency)}</Text>
+              <Text style={styles.chartTotalLabel}>Total Revenue</Text>
+              <View style={[styles.chartRow, { marginTop: spacing.lg }]}>
+                {(summary?.chart_days?.days || []).map((d) => (
+                  <View key={d.day} style={styles.chartCol}>
                     <View style={styles.barTrack}>
-                      <View style={[styles.bar, { height: `${(m.revenue_cents / maxBar) * 100}%` }]} />
+                      <View style={[styles.bar, { height: `${(d.revenue_cents / maxDayBar) * 100}%` }]} />
                     </View>
-                    <Text style={styles.barLabel}>{m.label}</Text>
+                    {d.day === 1 || d.day % 5 === 0 ? <Text style={styles.barLabel}>{d.day}</Text> : null}
                   </View>
                 ))}
+              </View>
+            </Card>
+
+            {/* Revenue (Jan - Dec) */}
+            <Card testID="dashboard-chart-year-card" style={{ marginTop: spacing.md }}>
+              <View style={styles.chartHeader}>
+                <Text style={styles.sectionTitle}>Revenue (Jan - Dec)</Text>
+                <View style={styles.rangeBadge}>
+                  <Feather name="calendar" size={12} color={colors.muted} />
+                  <Text style={styles.rangeBadgeText}>{summary?.chart_year?.range_label}</Text>
+                </View>
+              </View>
+              <Text style={styles.chartTotal}>{formatMoney(summary?.chart_year?.total_cents || 0, currency)}</Text>
+              <Text style={styles.chartTotalLabel}>Total Revenue (Year to Date)</Text>
+              <View style={[styles.chartRow, { marginTop: spacing.lg }]}>
+                {(summary?.chart_year?.months || []).map((m) => {
+                  const isCurrent = m.month === summary?.chart_year?.current_month;
+                  return (
+                    <View key={`${m.year}-${m.month}`} style={styles.chartCol}>
+                      <View style={styles.barTrack}>
+                        <View
+                          style={[
+                            styles.bar,
+                            { height: `${(m.revenue_cents / maxMonthBar) * 100}%` },
+                            isCurrent ? styles.barCurrent : null,
+                          ]}
+                        />
+                      </View>
+                      <Text style={styles.barLabel}>{m.label}</Text>
+                    </View>
+                  );
+                })}
+              </View>
+              <View style={styles.legendRow}>
+                <View style={styles.legendItem}>
+                  <View style={[styles.legendSwatch, { backgroundColor: colors.brand }]} />
+                  <Text style={styles.legendText}>Current Month</Text>
+                </View>
+                <View style={styles.legendItem}>
+                  <View style={[styles.legendSwatch, { backgroundColor: colors.brandSecondary }]} />
+                  <Text style={styles.legendText}>Other Months</Text>
+                </View>
               </View>
             </Card>
 
@@ -214,8 +265,18 @@ const styles = StyleSheet.create({
     justifyContent: "flex-end",
     overflow: "hidden",
   },
-  bar: { width: "100%", backgroundColor: colors.brand, borderRadius: radius.sm, minHeight: 2 },
+  bar: { width: "100%", backgroundColor: colors.brandSecondary, borderRadius: radius.sm, minHeight: 2 },
+  barCurrent: { backgroundColor: colors.brand },
   barLabel: { fontSize: 11, color: colors.muted, marginTop: 6 },
+  chartHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start" },
+  rangeBadge: { flexDirection: "row", alignItems: "center", gap: 4 },
+  rangeBadgeText: { fontSize: 11, color: colors.muted },
+  chartTotal: { fontSize: 28, fontWeight: "600", color: colors.onSurface, marginTop: spacing.sm, letterSpacing: -0.5 },
+  chartTotalLabel: { fontSize: typography.sm, color: colors.muted, marginTop: 2 },
+  legendRow: { flexDirection: "row", gap: spacing.lg, marginTop: spacing.md, justifyContent: "center" },
+  legendItem: { flexDirection: "row", alignItems: "center", gap: 6 },
+  legendSwatch: { width: 10, height: 10, borderRadius: 2 },
+  legendText: { fontSize: 12, color: colors.muted },
   recentHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginTop: spacing.xl, marginBottom: spacing.md },
   invoiceRow: {
     flexDirection: "row",
