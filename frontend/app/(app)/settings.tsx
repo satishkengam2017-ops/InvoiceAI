@@ -149,9 +149,12 @@ export default function Settings() {
       Alert.alert("Error", "Business not loaded. Please try again in a moment.");
       return;
     }
-    // Append client_reference_id (PLAN.BUSINESS_ID) so the Stripe webhook can
+    // Append client_reference_id (PLAN_BUSINESS_ID) so the Stripe webhook can
     // auto-activate the plan on payment. Prefill the email for a smoother flow.
-    const clientRef = `${p.key}.${business.id}`;
+    // Stripe's client_reference_id only allows alphanumerics, dashes, and
+    // underscores (a period is rejected and the whole field silently dropped),
+    // so "_" is the separator - safe since business.id (a UUID) never contains one.
+    const clientRef = `${p.key}_${business.id}`;
     const params = new URLSearchParams({ client_reference_id: clientRef });
     if (user?.email) params.append("prefilled_email", user.email);
     const url = `${p.upgrade_url}?${params.toString()}`;
