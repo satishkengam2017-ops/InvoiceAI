@@ -21,7 +21,7 @@ VALID_PLANS = {"FREE", "STARTER", "PRO"}
 async def stripe_webhook(request: Request, db: AsyncSession = Depends(get_db)):
     """Handle Stripe events for automatic plan activation/deactivation.
 
-    Payment Links redirect back with client_reference_id = "PLAN.BUSINESS_ID".
+    Payment Links redirect back with client_reference_id = "PLAN_BUSINESS_ID".
     We flip business.plan on checkout.session.completed and downgrade to FREE
     on customer.subscription.deleted. All events are deduped via WebhookEvent.
     """
@@ -52,8 +52,8 @@ async def stripe_webhook(request: Request, db: AsyncSession = Depends(get_db)):
         client_ref = obj.get("client_reference_id") or ""
         customer_id = obj.get("customer")
         subscription_id = obj.get("subscription")
-        if "." in client_ref:
-            plan, biz_id = client_ref.split(".", 1)
+        if "_" in client_ref:
+            plan, biz_id = client_ref.split("_", 1)
             plan = plan.upper()
             try:
                 uuid.UUID(biz_id)

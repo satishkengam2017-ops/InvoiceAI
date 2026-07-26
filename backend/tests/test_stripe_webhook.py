@@ -53,12 +53,12 @@ def secret_configured():
 
 class TestWebhookSignatureGates:
     def test_missing_signature_header_returns_400(self, secret_configured):
-        payload = _event("checkout.session.completed", {"client_reference_id": "STARTER.x"})
+        payload = _event("checkout.session.completed", {"client_reference_id": "STARTER_x"})
         r = _post(payload, sig=None)
         assert r.status_code == 400
 
     def test_invalid_signature_returns_400(self, secret_configured):
-        payload = _event("checkout.session.completed", {"client_reference_id": "STARTER.x"})
+        payload = _event("checkout.session.completed", {"client_reference_id": "STARTER_x"})
         bad_sig = _sig(payload, "whsec_WRONG_SECRET_xxxxxxxxxxxxxxxxxxxxx")
         r = _post(payload, sig=bad_sig)
         assert r.status_code == 400
@@ -86,7 +86,7 @@ class TestWebhookPlanFlips:
         s, biz_id = self._fresh_biz()
         assert self._get_plan(s) == "FREE"
         payload = _event("checkout.session.completed", {
-            "client_reference_id": f"STARTER.{biz_id}",
+            "client_reference_id": f"STARTER_{biz_id}",
             "customer": "cus_TEST_starter",
             "subscription": "sub_TEST_starter",
         })
@@ -97,7 +97,7 @@ class TestWebhookPlanFlips:
     def test_checkout_completed_flips_to_pro(self, secret_configured):
         s, biz_id = self._fresh_biz()
         payload = _event("checkout.session.completed", {
-            "client_reference_id": f"PRO.{biz_id}",
+            "client_reference_id": f"PRO_{biz_id}",
             "customer": "cus_TEST_pro",
             "subscription": "sub_TEST_pro",
         })
@@ -110,7 +110,7 @@ class TestWebhookPlanFlips:
         evt_id = f"evt_TEST_dup_{uuid.uuid4().hex[:12]}"
         payload = _event(
             "checkout.session.completed",
-            {"client_reference_id": f"STARTER.{biz_id}", "customer": "cus_dup", "subscription": "sub_dup"},
+            {"client_reference_id": f"STARTER_{biz_id}", "customer": "cus_dup", "subscription": "sub_dup"},
             evt_id=evt_id,
         )
         r1 = _post(payload, _sig(payload, secret_configured))
@@ -120,7 +120,7 @@ class TestWebhookPlanFlips:
         # Only processed once — plan is STARTER (not double-changed)
         assert self._get_plan(s) == "STARTER"
 
-    def test_malformed_client_reference_id_no_dot(self, secret_configured):
+    def test_malformed_client_reference_id_no_underscore(self, secret_configured):
         s, biz_id = self._fresh_biz()
         payload = _event("checkout.session.completed", {"client_reference_id": "GARBAGE"})
         r = _post(payload, _sig(payload, secret_configured))
@@ -132,7 +132,7 @@ class TestWebhookPlanFlips:
         s, biz_id = self._fresh_biz()
         payload = _event(
             "checkout.session.completed",
-            {"client_reference_id": f"ENTERPRISE.{biz_id}", "customer": "cus_x"},
+            {"client_reference_id": f"ENTERPRISE_{biz_id}", "customer": "cus_x"},
         )
         r = _post(payload, _sig(payload, secret_configured))
         assert r.status_code == 200
@@ -143,7 +143,7 @@ class TestWebhookPlanFlips:
         cust_id = f"cus_TEST_del_{uuid.uuid4().hex[:8]}"
         # Upgrade first
         p1 = _event("checkout.session.completed", {
-            "client_reference_id": f"PRO.{biz_id}",
+            "client_reference_id": f"PRO_{biz_id}",
             "customer": cust_id,
             "subscription": "sub_TEST_del",
         })
@@ -160,7 +160,7 @@ class TestWebhookPlanFlips:
         s, biz_id = self._fresh_biz()
         cust_id = f"cus_TEST_pf_{uuid.uuid4().hex[:8]}"
         p1 = _event("checkout.session.completed", {
-            "client_reference_id": f"STARTER.{biz_id}",
+            "client_reference_id": f"STARTER_{biz_id}",
             "customer": cust_id,
             "subscription": "sub_TEST_pf",
         })
