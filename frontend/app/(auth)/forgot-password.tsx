@@ -1,4 +1,4 @@
-import { Link } from "expo-router";
+import { useRouter } from "expo-router";
 import React, { useState } from "react";
 import {
   KeyboardAvoidingView,
@@ -11,23 +11,26 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { Button } from "@/src/components/Button";
-import { GoogleSignInButton } from "@/src/components/GoogleSignInButton";
 import { Input } from "@/src/components/Input";
-import { useAuth } from "@/src/context/AuthContext";
+import { api } from "@/src/lib/api";
 import { colors, spacing, typography, webContent } from "@/src/lib/theme";
 
-export default function SignIn() {
-  const { signIn, loading } = useAuth();
+export default function ForgotPassword() {
+  const router = useRouter();
   const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
+  const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
   const onSubmit = async () => {
     setErr(null);
+    setLoading(true);
     try {
-      await signIn(email.trim().toLowerCase(), password);
+      await api.post("/auth/forgot-password", { email: email.trim().toLowerCase() });
+      router.push({ pathname: "/(auth)/reset-password", params: { email: email.trim().toLowerCase() } });
     } catch (e) {
-      setErr(e instanceof Error ? e.message : "Sign-in failed");
+      setErr(e instanceof Error ? e.message : "Something went wrong. Please try again.");
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -36,13 +39,15 @@ export default function SignIn() {
       <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={{ flex: 1 }}>
         <ScrollView contentContainerStyle={[styles.scroll, webContent]} keyboardShouldPersistTaps="handled">
           <View style={styles.brand}>
-            <Text style={styles.brandMark}>Invoice<Text style={{ color: colors.brand }}>AI</Text></Text>
-            <Text style={styles.subtitle}>Get paid faster. Draft a professional invoice in 30 seconds.</Text>
+            <Text style={styles.brandMark}>Forgot password?</Text>
+            <Text style={styles.subtitle}>
+              Enter your email and we'll send you a 6-digit code to reset your password.
+            </Text>
           </View>
 
           <View style={styles.form}>
             <Input
-              testID="sign-in-email"
+              testID="forgot-password-email"
               label="Email"
               autoCapitalize="none"
               keyboardType="email-address"
@@ -51,29 +56,8 @@ export default function SignIn() {
               onChangeText={setEmail}
               placeholder="you@company.com"
             />
-            <Input
-              testID="sign-in-password"
-              label="Password"
-              secureTextEntry
-              value={password}
-              onChangeText={setPassword}
-              placeholder="••••••••"
-            />
             {err ? <Text style={styles.err}>{err}</Text> : null}
-            <Button testID="sign-in-submit" title="Sign In" loading={loading} onPress={onSubmit} />
-            <GoogleSignInButton onError={setErr} />
-
-            <Link href="/(auth)/forgot-password" asChild>
-              <Text testID="sign-in-link-forgot-password" style={styles.link}>
-                Forgot password?
-              </Text>
-            </Link>
-
-            <Link href="/(auth)/sign-up" asChild>
-              <Text testID="sign-in-link-signup" style={styles.link}>
-                New here? Create an account
-              </Text>
-            </Link>
+            <Button testID="forgot-password-submit" title="Send code" loading={loading} onPress={onSubmit} />
           </View>
         </ScrollView>
       </KeyboardAvoidingView>
@@ -86,10 +70,10 @@ const styles = StyleSheet.create({
   scroll: { flexGrow: 1, padding: spacing.xl, justifyContent: "center" },
   brand: { marginBottom: spacing.xxxl },
   brandMark: {
-    fontSize: 40,
+    fontSize: 28,
     fontWeight: "600",
     color: colors.onSurface,
-    letterSpacing: -1,
+    letterSpacing: -0.5,
   },
   subtitle: {
     fontSize: typography.lg,
@@ -102,12 +86,5 @@ const styles = StyleSheet.create({
     color: colors.error,
     fontSize: typography.base,
     marginBottom: spacing.md,
-  },
-  link: {
-    textAlign: "center",
-    color: colors.brand,
-    marginTop: spacing.xl,
-    fontSize: typography.base,
-    fontWeight: "500",
   },
 });
