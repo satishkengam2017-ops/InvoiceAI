@@ -178,3 +178,61 @@ class TestForgotPassword:
 
         r = requests.post(f"{API}/auth/login", json={"email": email, "password": "BrandNewPassword789!"})
         assert r.status_code == 200
+
+
+class TestForgotPasswordEmailFailureIsNonFatal:
+    """The generic-response guarantee must hold even when SMTP delivery
+    fails - otherwise a broken mail server turns into a 500-vs-200
+    enumeration oracle distinct from the timing side-channel the design
+    doc already accepts. This needs its own server process booted with a
+    deliberately-unreachable SMTP host and the dev-code flag OFF (unlike
+    every other test in this file), so it's isolated here rather than
+    sharing the module-level server the other tests rely on.
+    """
+
+    def test_smtp_failure_still_returns_generic_200(self):
+        import subprocess
+        import sys
+        import time
+
+        env = os.environ.copy()
+        env["SMTP_HOST"] = "127.0.0.1"
+        env["SMTP_PORT"] = "1"  # nothing listens here - guaranteed connection failure
+        env["SMTP_USERNAME"] = "test@example.com"
+        env["SMTP_PASSWORD"] = "test-password"
+        env["SMTP_FROM_EMAIL"] = "test@example.com"
+        env.pop("AUTH_DEV_EXPOSE_RESET_CODE", None)
+
+        port = 8031
+        backend_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        proc = subprocess.Popen(
+            [sys.executable, "-m", "uvicorn", "app.main:app", "--port", str(port), "--host", "127.0.0.1"],
+            cwd=backend_dir,
+            env=env,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        try:
+            base = f"http://127.0.0.1:{port}/api"
+            for _ in range(30):
+                try:
+                    if requests.get(f"{base}/health", timeout=1).status_code == 200:
+                        break
+                except requests.exceptions.ConnectionError:
+                    pass
+                time.sleep(1)
+            else:
+                pytest.fail("test server did not start")
+
+            email = f"TEST_fp_smtpfail_{uuid.uuid4().hex[:10]}@example.com"
+            r = requests.post(f"{base}/auth/register", json={
+                "email": email, "password": "Password123!", "business_name": "TEST_FP_SMTP_FAIL"
+            })
+            assert r.status_code == 200, r.text
+
+            r = requests.post(f"{base}/auth/forgot-password", json={"email": email})
+            assert r.status_code == 200, r.text
+            assert "dev_code" not in r.json()
+        finally:
+            proc.terminate()
+            proc.wait(timeout=10)

@@ -1,5 +1,6 @@
 """Auth routes: register, login, me, clerk-exchange, forgot/reset password."""
 import asyncio
+import logging
 import os
 import secrets
 from datetime import datetime, timedelta, timezone
@@ -112,12 +113,15 @@ async def forgot_password(payload: ForgotPasswordIn, db: AsyncSession = Depends(
     if AUTH_DEV_EXPOSE_RESET_CODE:
         return {**generic_response, "dev_code": code}
 
-    await asyncio.to_thread(
-        send_email,
-        to=user.email,
-        subject="Your InvoiceAI password reset code",
-        body=f"Your password reset code is {code}. It expires in {RESET_CODE_TTL_MINUTES} minutes.",
-    )
+    try:
+        await asyncio.to_thread(
+            send_email,
+            to=user.email,
+            subject="Your InvoiceAI password reset code",
+            body=f"Your password reset code is {code}. It expires in {RESET_CODE_TTL_MINUTES} minutes.",
+        )
+    except Exception:
+        logging.getLogger(__name__).exception("Failed to send password reset email to user %s", user.id)
     return generic_response
 
 
