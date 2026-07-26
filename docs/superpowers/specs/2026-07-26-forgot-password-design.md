@@ -69,7 +69,7 @@ Request: `{ "email": string }`
 Response (always, regardless of whether the account exists): `200 { "message": "If that email is registered, a code has been sent." }`
 
 ### `POST /api/auth/reset-password`
-Request: `{ "email": string, "code": string, "new_password": string }`
+Request: `{ "email": string, "code": string, "new_password": string }` — `new_password` uses the same `min_length=6` rule as `RegisterIn.password` (`backend/app/schemas.py`), for consistency.
 Response: `200 { "message": "Password updated." }` or `400` with a user-facing error (see flow above).
 
 ## Frontend
