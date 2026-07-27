@@ -23,6 +23,9 @@ export default function Onboarding() {
   const [phone, setPhone] = useState(business?.phone || "");
   const [address, setAddress] = useState(business?.address_line1 || "");
   const [city, setCity] = useState(business?.city || "");
+  const [region, setRegion] = useState(business?.region || "");
+  const [country, setCountry] = useState(business?.country || "");
+  const [gstHstNumber, setGstHstNumber] = useState(business?.gst_hst_number || "");
   const [currency, setCurrency] = useState(business?.currency || "USD");
   const [dueDays, setDueDays] = useState(String(business?.default_due_days ?? 14));
   const [saving, setSaving] = useState(false);
@@ -38,6 +41,9 @@ export default function Onboarding() {
         phone: phone.trim() || null,
         address_line1: address.trim() || null,
         city: city.trim() || null,
+        region: region.trim() || null,
+        country: country.trim() || null,
+        gst_hst_number: gstHstNumber.trim() || null,
         currency: currency.trim().toUpperCase() || "USD",
         default_due_days: parseInt(dueDays, 10) || 14,
         onboarded: true,
@@ -65,7 +71,16 @@ export default function Onboarding() {
             <Input testID="onboard-email" label="Contact email" keyboardType="email-address" autoCapitalize="none" value={email} onChangeText={setEmail} />
             <Input testID="onboard-phone" label="Phone (optional)" keyboardType="phone-pad" value={phone} onChangeText={setPhone} />
             <Input testID="onboard-address" label="Address line 1 (optional)" value={address} onChangeText={setAddress} />
-            <Input testID="onboard-city" label="City (optional)" value={city} onChangeText={setCity} />
+            <View style={{ flexDirection: "row", gap: spacing.md }}>
+              <View style={{ flex: 1 }}>
+                <Input testID="onboard-city" label="City (optional)" value={city} onChangeText={setCity} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Input testID="onboard-region" label="Province/State (optional)" value={region} onChangeText={setRegion} />
+              </View>
+            </View>
+            <Input testID="onboard-country" label="Country (optional)" value={country} onChangeText={setCountry} />
+            <Input testID="onboard-gst-hst" label="GST/HST Registration No. (optional)" value={gstHstNumber} onChangeText={setGstHstNumber} />
             <View style={{ flexDirection: "row", gap: spacing.md }}>
               <View style={{ flex: 1 }}>
                 <Input testID="onboard-currency" label="Currency" autoCapitalize="characters" value={currency} onChangeText={setCurrency} />
