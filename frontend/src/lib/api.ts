@@ -10,6 +10,19 @@ async function getToken(): Promise<string | null> {
   return await storage.secureGet<string | null>(AUTH_TOKEN_KEY, null);
 }
 
+// FastAPI/Pydantic 422 responses put `detail` as an array of
+// { msg, loc, ... } objects rather than a string - falling through to
+// JSON.stringify for that shape shows the user a raw JSON blob instead of
+// the human-readable validation message buried inside it.
+function extractErrorMessage(detail: unknown, status: number): string {
+  if (typeof detail === "string") return detail;
+  if (Array.isArray(detail) && detail.length > 0 && detail.every((d) => d && typeof d === "object" && "msg" in d)) {
+    return detail.map((d) => String((d as { msg: unknown }).msg)).join(" ");
+  }
+  if (detail === undefined) return `Request failed (${status})`;
+  return JSON.stringify(detail);
+}
+
 async function apiFetch<T = unknown>(
   path: string,
   init: RequestInit = {}
@@ -27,12 +40,8 @@ async function apiFetch<T = unknown>(
   try { body = text ? JSON.parse(text) : null; } catch { body = text; }
 
   if (!res.ok) {
-    const message =
-      (body && typeof body === "object" && "detail" in body
-        ? typeof (body as { detail: unknown }).detail === "string"
-          ? String((body as { detail: string }).detail)
-          : JSON.stringify((body as { detail: unknown }).detail)
-        : `Request failed (${res.status})`);
+    const detail = body && typeof body === "object" && "detail" in body ? (body as { detail: unknown }).detail : undefined;
+    const message = extractErrorMessage(detail, res.status);
     const err = new Error(message) as Error & { status?: number; body?: unknown };
     err.status = res.status;
     err.body = body;
