@@ -121,12 +121,14 @@ export default function Invoices() {
       </View>
 
       {/* Report export: date range + CSV download */}
-      <View style={[styles.exportRow, webContent]}>
-        <View style={styles.dateFieldWrap}>
-          <DateField testID="invoices-from-date" placeholder="From date" value={fromDate} onChange={setFromDate} maximumDate={toDate ? new Date(toDate) : undefined} />
-        </View>
-        <View style={styles.dateFieldWrap}>
-          <DateField testID="invoices-to-date" placeholder="To date" value={toDate} onChange={setToDate} minimumDate={fromDate ? new Date(fromDate) : undefined} />
+      <View style={[styles.exportSection, webContent]}>
+        <View style={styles.dateRow}>
+          <View style={styles.dateFieldWrap}>
+            <DateField testID="invoices-from-date" placeholder="From date" value={fromDate} onChange={setFromDate} maximumDate={toDate ? new Date(toDate) : undefined} />
+          </View>
+          <View style={styles.dateFieldWrap}>
+            <DateField testID="invoices-to-date" placeholder="To date" value={toDate} onChange={setToDate} minimumDate={fromDate ? new Date(fromDate) : undefined} />
+          </View>
         </View>
         <TouchableOpacity testID="invoices-download-csv" style={styles.csvBtn} onPress={exportCsv} activeOpacity={0.85}>
           <Feather name="download" size={14} color={colors.brand} />
@@ -228,19 +230,24 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.md,
   },
   searchInput: { flex: 1, height: 44, color: colors.onSurface, fontSize: typography.base },
-  exportRow: {
+  exportSection: {
+    marginHorizontal: spacing.lg,
+    marginTop: spacing.sm,
+  },
+  dateRow: {
     flexDirection: "row",
     alignItems: "center",
     gap: spacing.sm,
-    marginHorizontal: spacing.lg,
-    marginTop: spacing.sm,
   },
   dateFieldWrap: { flex: 1 },
   csvBtn: {
     flexDirection: "row",
     alignItems: "center",
+    justifyContent: "center",
+    alignSelf: "flex-end",
     gap: 6,
-    height: 48,
+    height: 40,
+    marginTop: spacing.sm,
     paddingHorizontal: spacing.md,
     borderRadius: radius.pill,
     borderWidth: 1,
