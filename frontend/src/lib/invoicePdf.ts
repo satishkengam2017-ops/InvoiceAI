@@ -125,6 +125,19 @@ export function invoiceHtml(invoice: Invoice, business: Business): string {
         border-radius: 4px;
       }
     }
+    /* The 14mm page padding and A4-oriented table spacing above are sized
+       for print, not a phone screen - on a ~360-390px viewport they leave
+       too little room for the 5-column line-items table, cutting off the
+       rightmost columns. Shrink the on-screen chrome so more of it fits,
+       and make the table horizontally scrollable as a safety net for
+       whatever still doesn't. */
+    @media screen and (max-width: 480px) {
+      body { padding: 12px 8px; font-size: 13px; }
+      .page { padding: 16px; }
+      .table-wrap { overflow-x: auto; }
+      .th, .td { padding: 8px 6px; }
+    }
+    .table-wrap { width: 100%; }
     .muted-13 { font-size: 13px; color: #6B6B69; }
     .dark-13 { font-size: 13px; color: #3E3E3C; }
     .section-label {
@@ -196,18 +209,20 @@ export function invoiceHtml(invoice: Invoice, business: Business): string {
     </div>
 
     <!-- Line items -->
-    <table style="margin-bottom:20px;">
-      <thead>
-        <tr>
-          <th class="th th-desc">Description</th>
-          <th class="th">Qty</th>
-          <th class="th">Unit price</th>
-          <th class="th">Tax</th>
-          <th class="th">Amount</th>
-        </tr>
-      </thead>
-      <tbody>${rows}</tbody>
-    </table>
+    <div class="table-wrap" style="margin-bottom:20px;">
+      <table>
+        <thead>
+          <tr>
+            <th class="th th-desc">Description</th>
+            <th class="th">Qty</th>
+            <th class="th">Unit price</th>
+            <th class="th">Tax</th>
+            <th class="th">Amount</th>
+          </tr>
+        </thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>
 
     <!-- Totals -->
     <div style="display:flex;justify-content:flex-end;margin-bottom:8px;page-break-inside:avoid;">

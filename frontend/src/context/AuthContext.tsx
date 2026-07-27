@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useEffect, useState, useCallback } from "react";
 import { useRouter, useSegments } from "expo-router";
 
+import { useClerkSignOut } from "@/src/hooks/useClerkSignOut";
 import { api, AUTH_TOKEN_KEY, clearToken, saveToken } from "@/src/lib/api";
 import type { Business } from "@/src/lib/types";
 import { storage } from "@/src/utils/storage";
@@ -28,6 +29,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(false);
   const segments = useSegments();
   const router = useRouter();
+  const clerkSignOut = useClerkSignOut();
 
   const loadSession = useCallback(async () => {
     try {
@@ -122,6 +124,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     await clearToken();
     setUser(null);
     setBusiness(null);
+    // Clerk's session is tracked independently of our own JWT and survives
+    // clearToken() above - without ending it too, the next "Continue with
+    // Google" reuses this cached session directly (see
+    // GoogleSignInButton.web.tsx's isSignedIn branch) instead of showing
+    // Google's account picker, so a user can never switch accounts after
+    // signing out.
+    try {
+      await clerkSignOut();
+    } catch {
+      /* no active Clerk session to sign out of - nothing to do */
+    }
     router.replace("/(auth)/sign-in");
   };
 
