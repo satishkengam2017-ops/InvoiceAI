@@ -1,26 +1,26 @@
-"""Minimal SMTP mailer for transactional emails (e.g. password reset codes).
+"""Email sending via Resend's HTTPS API (e.g. password reset codes).
 
-Uses the account's own Hostinger mailbox over SMTP rather than a dedicated
-transactional-email API - see
-docs/superpowers/specs/2026-07-26-forgot-password-design.md for why.
+Not raw SMTP: Railway blocks outbound SMTP (ports 465/587) on Trial/Hobby
+plans, only unblocking it on Pro and above - confirmed by testing directly
+from this app's own Railway container, where every SMTP port timed out
+while port 443 to the same host connected instantly. Resend's API runs
+entirely over HTTPS (443), which Railway does not block.
 """
 import os
-import smtplib
-from email.mime.text import MIMEText
+
+import httpx
+
+RESEND_API_URL = "https://api.resend.com/emails"
 
 
-def send_email(to: str, subject: str, body: str) -> None:
-    host = os.environ["SMTP_HOST"]
-    port = int(os.environ.get("SMTP_PORT", "465"))
-    username = os.environ["SMTP_USERNAME"]
-    password = os.environ["SMTP_PASSWORD"]
-    from_email = os.environ.get("SMTP_FROM_EMAIL", username)
+async def send_email(to: str, subject: str, body: str) -> None:
+    api_key = os.environ["RESEND_API_KEY"]
+    from_email = os.environ["RESEND_FROM_EMAIL"]
 
-    msg = MIMEText(body)
-    msg["Subject"] = subject
-    msg["From"] = from_email
-    msg["To"] = to
-
-    with smtplib.SMTP_SSL(host, port) as server:
-        server.login(username, password)
-        server.sendmail(from_email, [to], msg.as_string())
+    async with httpx.AsyncClient() as client:
+        resp = await client.post(
+            RESEND_API_URL,
+            headers={"Authorization": f"Bearer {api_key}"},
+            json={"from": from_email, "to": [to], "subject": subject, "text": body},
+        )
+    resp.raise_for_status()
