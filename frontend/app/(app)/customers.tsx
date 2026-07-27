@@ -3,6 +3,7 @@ import { useFocusEffect, useRouter } from "expo-router";
 import React, { useCallback, useState } from "react";
 import {
   ActivityIndicator,
+  Alert,
   FlatList,
   RefreshControl,
   StyleSheet,
@@ -17,6 +18,7 @@ import { AddCustomerModal } from "@/src/components/AddCustomerModal";
 import { Button } from "@/src/components/Button";
 import { EmptyState } from "@/src/components/Card";
 import { api } from "@/src/lib/api";
+import { confirmAsync } from "@/src/lib/confirm";
 import { downloadCsv, toCsv, todayStamp } from "@/src/lib/csv";
 import { colors, radius, spacing, typography, webContent } from "@/src/lib/theme";
 import type { Customer } from "@/src/lib/types";
@@ -43,6 +45,17 @@ export default function Customers() {
   }, [search]);
 
   useFocusEffect(useCallback(() => { load(); }, [load]));
+
+  const deleteCustomer = async (customer: Customer) => {
+    const ok = await confirmAsync("Delete customer?", `"${customer.name}" will be removed from your customer list. Their past invoices are not affected.`);
+    if (!ok) return;
+    try {
+      await api.del(`/customers/${customer.id}`);
+      setItems((prev) => prev.filter((c) => c.id !== customer.id));
+    } catch (e) {
+      Alert.alert("Delete failed", e instanceof Error ? e.message : "Unknown error");
+    }
+  };
 
   const exportCsv = async () => {
     const rows = items.map((c) => [c.name, c.company || "", c.email || "", c.phone || ""]);
@@ -108,6 +121,14 @@ export default function Customers() {
                 <Text style={styles.rowName}>{item.name}</Text>
                 <Text style={styles.rowSub}>{item.email || item.phone || item.company || "—"}</Text>
               </View>
+              <TouchableOpacity
+                testID={`customer-row-delete-${item.id}`}
+                onPress={() => deleteCustomer(item)}
+                style={styles.deleteBtn}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              >
+                <Feather name="trash-2" size={18} color={colors.error} />
+              </TouchableOpacity>
               <Feather name="chevron-right" size={18} color={colors.muted} />
             </TouchableOpacity>
           )}
@@ -190,4 +211,5 @@ const styles = StyleSheet.create({
   avatarText: { color: colors.brand, fontSize: typography.lg, fontWeight: "600" },
   rowName: { fontSize: typography.lg, fontWeight: "500", color: colors.onSurface },
   rowSub: { fontSize: typography.base, color: colors.muted, marginTop: 2 },
+  deleteBtn: { padding: 4, marginRight: spacing.xs },
 });

@@ -3,6 +3,7 @@ import { useLocalSearchParams, useRouter } from "expo-router";
 import React, { useCallback, useEffect, useState } from "react";
 import {
   ActivityIndicator,
+  Alert,
   ScrollView,
   StyleSheet,
   Text,
@@ -15,6 +16,7 @@ import { AddCustomerModal } from "@/src/components/AddCustomerModal";
 import { Card, EmptyState } from "@/src/components/Card";
 import { StatusPill } from "@/src/components/StatusPill";
 import { api } from "@/src/lib/api";
+import { confirmAsync } from "@/src/lib/confirm";
 import { formatMoney } from "@/src/lib/money";
 import { colors, radius, spacing, typography, webContent } from "@/src/lib/theme";
 import type { Customer } from "@/src/lib/types";
@@ -40,6 +42,18 @@ export default function CustomerDetail() {
 
   useEffect(() => { load(); }, [load]);
 
+  const deleteCustomer = async () => {
+    if (!customer) return;
+    const ok = await confirmAsync("Delete customer?", `"${customer.name}" will be removed from your customer list. Their past invoices are not affected.`);
+    if (!ok) return;
+    try {
+      await api.del(`/customers/${customer.id}`);
+      router.back();
+    } catch (e) {
+      Alert.alert("Delete failed", e instanceof Error ? e.message : "Unknown error");
+    }
+  };
+
   if (loading || !customer) {
     return (
       <SafeAreaView style={styles.safe} edges={["top"]}>
@@ -55,9 +69,14 @@ export default function CustomerDetail() {
           <Feather name="chevron-left" size={24} color={colors.onSurface} />
         </TouchableOpacity>
         <Text style={styles.topbarTitle}>{customer.name}</Text>
-        <TouchableOpacity testID="cust-edit" onPress={() => setShowEdit(true)}>
-          <Feather name="edit-2" size={20} color={colors.onSurface} />
-        </TouchableOpacity>
+        <View style={styles.topbarActions}>
+          <TouchableOpacity testID="cust-edit" onPress={() => setShowEdit(true)}>
+            <Feather name="edit-2" size={20} color={colors.onSurface} />
+          </TouchableOpacity>
+          <TouchableOpacity testID="cust-delete" onPress={deleteCustomer}>
+            <Feather name="trash-2" size={20} color={colors.error} />
+          </TouchableOpacity>
+        </View>
       </View>
 
       <ScrollView contentContainerStyle={[styles.scroll, webContent]}>
@@ -131,6 +150,7 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: colors.divider,
   },
+  topbarActions: { flexDirection: "row", alignItems: "center", gap: spacing.lg },
   topbarTitle: { fontSize: typography.lg, fontWeight: "500", color: colors.onSurface },
   scroll: { padding: spacing.lg },
   hero: { alignItems: "center", padding: spacing.xl, marginBottom: spacing.md },
