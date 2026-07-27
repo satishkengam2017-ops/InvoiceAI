@@ -117,7 +117,7 @@ export default function Customers() {
       <AddCustomerModal
         visible={showAdd}
         onClose={() => setShowAdd(false)}
-        onCreated={() => { setShowAdd(false); load(); }}
+        onSaved={() => { setShowAdd(false); load(); }}
       />
     </SafeAreaView>
   );

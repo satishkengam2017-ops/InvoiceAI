@@ -1,9 +1,10 @@
 import { Feather } from "@expo/vector-icons";
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import {
   KeyboardAvoidingView,
   Modal,
   Platform,
+  ScrollView,
   StyleSheet,
   Text,
   TouchableOpacity,
@@ -18,22 +19,48 @@ import type { Customer } from "@/src/lib/types";
 
 export function AddCustomerModal({
   visible,
+  customer,
   onClose,
-  onCreated,
+  onSaved,
 }: {
   visible: boolean;
+  /** When provided, the modal edits this customer instead of creating a new one. */
+  customer?: Customer | null;
   onClose: () => void;
-  onCreated: (c: Customer) => void;
+  onSaved: (c: Customer) => void;
 }) {
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
   const [company, setCompany] = useState("");
+  const [addressLine1, setAddressLine1] = useState("");
+  const [city, setCity] = useState("");
+  const [region, setRegion] = useState("");
+  const [postalCode, setPostalCode] = useState("");
+  const [country, setCountry] = useState("");
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
+  const isEdit = !!customer;
+
+  useEffect(() => {
+    if (!visible) return;
+    setName(customer?.name || "");
+    setEmail(customer?.email || "");
+    setPhone(customer?.phone || "");
+    setCompany(customer?.company || "");
+    setAddressLine1(customer?.address_line1 || "");
+    setCity(customer?.city || "");
+    setRegion(customer?.region || "");
+    setPostalCode(customer?.postal_code || "");
+    setCountry(customer?.country || "");
+    setErr(null);
+  }, [visible, customer]);
+
   const reset = () => {
-    setName(""); setEmail(""); setPhone(""); setCompany(""); setErr(null);
+    setName(""); setEmail(""); setPhone(""); setCompany("");
+    setAddressLine1(""); setCity(""); setRegion(""); setPostalCode(""); setCountry("");
+    setErr(null);
   };
 
   const onSave = async () => {
@@ -41,16 +68,24 @@ export function AddCustomerModal({
     setErr(null);
     setSaving(true);
     try {
-      const c = await api.post<Customer>("/customers", {
+      const payload = {
         name: name.trim(),
         email: email.trim() || null,
         phone: phone.trim() || null,
         company: company.trim() || null,
-      });
-      reset();
-      onCreated(c);
+        address_line1: addressLine1.trim() || null,
+        city: city.trim() || null,
+        region: region.trim() || null,
+        postal_code: postalCode.trim() || null,
+        country: country.trim() || null,
+      };
+      const c = isEdit
+        ? await api.patch<Customer>(`/customers/${customer!.id}`, payload)
+        : await api.post<Customer>("/customers", payload);
+      if (!isEdit) reset();
+      onSaved(c);
     } catch (e) {
-      setErr(e instanceof Error ? e.message : "Failed to create");
+      setErr(e instanceof Error ? e.message : "Failed to save");
     } finally {
       setSaving(false);
     }
@@ -62,17 +97,36 @@ export function AddCustomerModal({
         <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined}>
           <View style={styles.card}>
             <View style={styles.header}>
-              <Text style={styles.title}>Add customer</Text>
+              <Text style={styles.title}>{isEdit ? "Edit customer" : "Add customer"}</Text>
               <TouchableOpacity testID="add-customer-close" onPress={() => { reset(); onClose(); }}>
                 <Feather name="x" size={22} color={colors.muted} />
               </TouchableOpacity>
             </View>
-            <Input testID="add-customer-name" label="Name *" value={name} onChangeText={setName} />
-            <Input testID="add-customer-email" label="Email" keyboardType="email-address" autoCapitalize="none" value={email} onChangeText={setEmail} />
-            <Input testID="add-customer-phone" label="Phone" keyboardType="phone-pad" value={phone} onChangeText={setPhone} />
-            <Input testID="add-customer-company" label="Company" value={company} onChangeText={setCompany} />
+            <ScrollView keyboardShouldPersistTaps="handled" style={styles.scroll}>
+              <Input testID="add-customer-name" label="Name *" value={name} onChangeText={setName} />
+              <Input testID="add-customer-email" label="Email" keyboardType="email-address" autoCapitalize="none" value={email} onChangeText={setEmail} />
+              <Input testID="add-customer-phone" label="Phone" keyboardType="phone-pad" value={phone} onChangeText={setPhone} />
+              <Input testID="add-customer-company" label="Company" value={company} onChangeText={setCompany} />
+              <Input testID="add-customer-address" label="Address" value={addressLine1} onChangeText={setAddressLine1} />
+              <View style={{ flexDirection: "row", gap: spacing.md }}>
+                <View style={{ flex: 1 }}>
+                  <Input testID="add-customer-city" label="City" value={city} onChangeText={setCity} />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Input testID="add-customer-region" label="Province/State" value={region} onChangeText={setRegion} />
+                </View>
+              </View>
+              <View style={{ flexDirection: "row", gap: spacing.md }}>
+                <View style={{ flex: 1 }}>
+                  <Input testID="add-customer-postal-code" label="Postal/ZIP code" value={postalCode} onChangeText={setPostalCode} />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Input testID="add-customer-country" label="Country" value={country} onChangeText={setCountry} />
+                </View>
+              </View>
+            </ScrollView>
             {err ? <Text style={styles.err}>{err}</Text> : null}
-            <Button testID="add-customer-save" title="Save Customer" loading={saving} onPress={onSave} />
+            <Button testID="add-customer-save" title={isEdit ? "Save Changes" : "Save Customer"} loading={saving} onPress={onSave} />
           </View>
         </KeyboardAvoidingView>
       </View>
@@ -88,7 +142,9 @@ const styles = StyleSheet.create({
     borderTopRightRadius: radius.lg,
     padding: spacing.lg,
     paddingBottom: spacing.xxxl,
+    maxHeight: "85%",
   },
+  scroll: { flexGrow: 0 },
   header: {
     flexDirection: "row",
     justifyContent: "space-between",

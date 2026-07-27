@@ -44,6 +44,11 @@ export default function Settings() {
   const [currency, setCurrency] = useState(business?.currency || "USD");
   const [defaultTerms, setDefaultTerms] = useState(business?.default_terms || "");
   const [gstHstNumber, setGstHstNumber] = useState(business?.gst_hst_number || "");
+  const [addressLine1, setAddressLine1] = useState(business?.address_line1 || "");
+  const [city, setCity] = useState(business?.city || "");
+  const [region, setRegion] = useState(business?.region || "");
+  const [postalCode, setPostalCode] = useState(business?.postal_code || "");
+  const [country, setCountry] = useState(business?.country || "");
   const [stripeUrl, setStripeUrl] = useState(business?.stripe_payment_url_default || "");
   const [anthropicKey, setAnthropicKey] = useState("");
   const [plan, setPlan] = useState<Plan>(business?.plan || "FREE");
@@ -67,6 +72,11 @@ export default function Settings() {
       setCurrency(business.currency);
       setDefaultTerms(business.default_terms || "");
       setGstHstNumber(business.gst_hst_number || "");
+      setAddressLine1(business.address_line1 || "");
+      setCity(business.city || "");
+      setRegion(business.region || "");
+      setPostalCode(business.postal_code || "");
+      setCountry(business.country || "");
       setStripeUrl(business.stripe_payment_url_default || "");
       setPlan(business.plan);
     }
@@ -85,6 +95,11 @@ export default function Settings() {
         currency: currency.trim().toUpperCase(),
         default_terms: defaultTerms.trim() || null,
         gst_hst_number: gstHstNumber.trim() || null,
+        address_line1: addressLine1.trim() || null,
+        city: city.trim() || null,
+        region: region.trim() || null,
+        postal_code: postalCode.trim() || null,
+        country: country.trim() || null,
       });
       await refreshBusiness();
       Alert.alert("Saved", "Business profile updated.");
@@ -198,6 +213,23 @@ export default function Settings() {
             </View>
             <Input testID="settings-terms" label="Default terms" value={defaultTerms} onChangeText={setDefaultTerms} multiline />
             <Input testID="settings-gst-hst" label="GST/HST Registration No." value={gstHstNumber} onChangeText={setGstHstNumber} />
+            <Input testID="settings-address" label="Address" value={addressLine1} onChangeText={setAddressLine1} />
+            <View style={{ flexDirection: "row", gap: spacing.md }}>
+              <View style={{ flex: 1 }}>
+                <Input testID="settings-city" label="City" value={city} onChangeText={setCity} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Input testID="settings-region" label="Province/State" value={region} onChangeText={setRegion} />
+              </View>
+            </View>
+            <View style={{ flexDirection: "row", gap: spacing.md }}>
+              <View style={{ flex: 1 }}>
+                <Input testID="settings-postal-code" label="Postal/ZIP code" value={postalCode} onChangeText={setPostalCode} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Input testID="settings-country" label="Country" value={country} onChangeText={setCountry} />
+              </View>
+            </View>
             <Button testID="settings-save-profile" title="Save Profile" loading={saving} onPress={saveProfile} />
           </Card>
 

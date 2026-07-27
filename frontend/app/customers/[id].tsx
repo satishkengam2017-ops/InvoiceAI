@@ -11,6 +11,7 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
+import { AddCustomerModal } from "@/src/components/AddCustomerModal";
 import { Card, EmptyState } from "@/src/components/Card";
 import { StatusPill } from "@/src/components/StatusPill";
 import { api } from "@/src/lib/api";
@@ -23,6 +24,7 @@ export default function CustomerDetail() {
   const router = useRouter();
   const [customer, setCustomer] = useState<Customer | null>(null);
   const [loading, setLoading] = useState(true);
+  const [showEdit, setShowEdit] = useState(false);
 
   const load = useCallback(async () => {
     if (!id) return;
@@ -53,7 +55,9 @@ export default function CustomerDetail() {
           <Feather name="chevron-left" size={24} color={colors.onSurface} />
         </TouchableOpacity>
         <Text style={styles.topbarTitle}>{customer.name}</Text>
-        <View style={{ width: 24 }} />
+        <TouchableOpacity testID="cust-edit" onPress={() => setShowEdit(true)}>
+          <Feather name="edit-2" size={20} color={colors.onSurface} />
+        </TouchableOpacity>
       </View>
 
       <ScrollView contentContainerStyle={[styles.scroll, webContent]}>
@@ -65,6 +69,13 @@ export default function CustomerDetail() {
           {customer.company ? <Text style={styles.muted}>{customer.company}</Text> : null}
           {customer.email ? <Text style={styles.muted}>{customer.email}</Text> : null}
           {customer.phone ? <Text style={styles.muted}>{customer.phone}</Text> : null}
+          {customer.address_line1 ? <Text style={styles.muted}>{customer.address_line1}</Text> : null}
+          {[customer.city, customer.region, customer.postal_code].filter(Boolean).join(", ") ? (
+            <Text style={styles.muted}>
+              {[customer.city, customer.region, customer.postal_code].filter(Boolean).join(", ")}
+            </Text>
+          ) : null}
+          {customer.country ? <Text style={styles.muted}>{customer.country}</Text> : null}
         </Card>
 
         <Card style={styles.card}>
@@ -98,6 +109,13 @@ export default function CustomerDetail() {
           ))
         )}
       </ScrollView>
+
+      <AddCustomerModal
+        visible={showEdit}
+        customer={customer}
+        onClose={() => setShowEdit(false)}
+        onSaved={(updated) => { setShowEdit(false); setCustomer((prev) => (prev ? { ...prev, ...updated } : updated)); }}
+      />
     </SafeAreaView>
   );
 }
