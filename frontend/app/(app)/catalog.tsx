@@ -3,6 +3,7 @@ import { useFocusEffect } from "expo-router";
 import React, { useCallback, useState } from "react";
 import {
   ActivityIndicator,
+  Alert,
   FlatList,
   KeyboardAvoidingView,
   Modal,
@@ -19,6 +20,7 @@ import { Button } from "@/src/components/Button";
 import { EmptyState } from "@/src/components/Card";
 import { Input } from "@/src/components/Input";
 import { api } from "@/src/lib/api";
+import { confirmAsync } from "@/src/lib/confirm";
 import { formatMoney, parseCents } from "@/src/lib/money";
 import { colors, radius, spacing, typography, webContent } from "@/src/lib/theme";
 import type { CatalogItem } from "@/src/lib/types";
@@ -42,6 +44,17 @@ export default function Catalog() {
   }, []);
 
   useFocusEffect(useCallback(() => { load(); }, [load]));
+
+  const deleteItem = async (item: CatalogItem) => {
+    const ok = await confirmAsync("Delete item?", `"${item.name}" will be removed from your catalog. Existing invoices are not affected.`);
+    if (!ok) return;
+    try {
+      await api.del(`/catalog/${item.id}`);
+      setItems((prev) => prev.filter((i) => i.id !== item.id));
+    } catch (e) {
+      Alert.alert("Delete failed", e instanceof Error ? e.message : "Unknown error");
+    }
+  };
 
   return (
     <SafeAreaView style={styles.safe} edges={["top"]}>
@@ -79,6 +92,14 @@ export default function Catalog() {
                   {item.tax_percent ? ` · ${item.tax_percent}% tax` : ""}
                 </Text>
               </View>
+              <TouchableOpacity
+                testID={`catalog-item-delete-${item.id}`}
+                onPress={() => deleteItem(item)}
+                style={styles.deleteBtn}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              >
+                <Feather name="trash-2" size={18} color={colors.error} />
+              </TouchableOpacity>
             </View>
           )}
         />
@@ -178,6 +199,8 @@ const styles = StyleSheet.create({
   newBtnText: { color: colors.onBrandPrimary, fontWeight: "500", fontSize: typography.base },
   list: { padding: spacing.lg, paddingBottom: 120 },
   row: {
+    flexDirection: "row",
+    alignItems: "center",
     backgroundColor: colors.surfaceSecondary,
     borderRadius: radius.md,
     padding: spacing.lg,
@@ -185,6 +208,7 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
     marginBottom: spacing.sm,
   },
+  deleteBtn: { padding: spacing.sm, marginLeft: spacing.sm },
   name: { fontSize: typography.lg, fontWeight: "500", color: colors.onSurface },
   desc: { fontSize: typography.base, color: colors.muted, marginTop: 2 },
   meta: { fontSize: typography.base, color: colors.onSurface, marginTop: 6 },
