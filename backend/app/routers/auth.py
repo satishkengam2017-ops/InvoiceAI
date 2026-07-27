@@ -1,5 +1,4 @@
 """Auth routes: register, login, me, clerk-exchange, forgot/reset password."""
-import asyncio
 import logging
 import os
 import secrets
@@ -114,8 +113,7 @@ async def forgot_password(payload: ForgotPasswordIn, db: AsyncSession = Depends(
         return {**generic_response, "dev_code": code}
 
     try:
-        await asyncio.to_thread(
-            send_email,
+        await send_email(
             to=user.email,
             subject="Your InvoiceAI password reset code",
             body=f"Your password reset code is {code}. It expires in {RESET_CODE_TTL_MINUTES} minutes.",

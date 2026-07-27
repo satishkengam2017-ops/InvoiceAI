@@ -181,26 +181,26 @@ class TestForgotPassword:
 
 
 class TestForgotPasswordEmailFailureIsNonFatal:
-    """The generic-response guarantee must hold even when SMTP delivery
-    fails - otherwise a broken mail server turns into a 500-vs-200
-    enumeration oracle distinct from the timing side-channel the design
-    doc already accepts. This needs its own server process booted with a
-    deliberately-unreachable SMTP host and the dev-code flag OFF (unlike
-    every other test in this file), so it's isolated here rather than
-    sharing the module-level server the other tests rely on.
+    """The generic-response guarantee must hold even when email delivery
+    fails - otherwise a rejected send turns into a 500-vs-200 enumeration
+    oracle distinct from the timing side-channel the design doc already
+    accepts. This needs its own server process booted with a deliberately
+    invalid Resend API key and the dev-code flag OFF (unlike every other
+    test in this file), so it's isolated here rather than sharing the
+    module-level server the other tests rely on. This hits Resend's real
+    API (which will reject the bad key with 401) rather than mocking it,
+    since the whole point is verifying our own error handling around a
+    real failed response, not the mailer's HTTP call itself.
     """
 
-    def test_smtp_failure_still_returns_generic_200(self):
+    def test_email_send_failure_still_returns_generic_200(self):
         import subprocess
         import sys
         import time
 
         env = os.environ.copy()
-        env["SMTP_HOST"] = "127.0.0.1"
-        env["SMTP_PORT"] = "1"  # nothing listens here - guaranteed connection failure
-        env["SMTP_USERNAME"] = "test@example.com"
-        env["SMTP_PASSWORD"] = "test-password"
-        env["SMTP_FROM_EMAIL"] = "test@example.com"
+        env["RESEND_API_KEY"] = "re_invalid_test_key_expected_to_be_rejected"
+        env["RESEND_FROM_EMAIL"] = "test@example.com"
         env.pop("AUTH_DEV_EXPOSE_RESET_CODE", None)
 
         port = 8031
@@ -224,9 +224,9 @@ class TestForgotPasswordEmailFailureIsNonFatal:
             else:
                 pytest.fail("test server did not start")
 
-            email = f"TEST_fp_smtpfail_{uuid.uuid4().hex[:10]}@example.com"
+            email = f"TEST_fp_emailfail_{uuid.uuid4().hex[:10]}@example.com"
             r = requests.post(f"{base}/auth/register", json={
-                "email": email, "password": "Password123!", "business_name": "TEST_FP_SMTP_FAIL"
+                "email": email, "password": "Password123!", "business_name": "TEST_FP_EMAIL_FAIL"
             })
             assert r.status_code == 200, r.text
 
