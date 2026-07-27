@@ -112,6 +112,19 @@ export function invoiceHtml(invoice: Invoice, business: Business): string {
       background: #FFFFFF; color: #111110; font-size: 14px; line-height: 1.45;
     }
     .page { max-width: 182mm; margin: 0 auto; }
+    /* @page margins only apply once Chromium/the browser actually paginates
+       for print - they have no effect on this same HTML rendered on-screen
+       beforehand (native's PDF render, and the web tab before window.print()
+       fires), so without this the content sits flush against the viewport
+       edges instead of looking like a page. */
+    @media screen {
+      body { background: #E9E9E7; padding: 24px 16px; }
+      .page {
+        background: #FFFFFF; padding: 14mm;
+        box-shadow: 0 1px 3px rgba(17,17,16,0.12), 0 8px 24px rgba(17,17,16,0.08);
+        border-radius: 4px;
+      }
+    }
     .muted-13 { font-size: 13px; color: #6B6B69; }
     .dark-13 { font-size: 13px; color: #3E3E3C; }
     .section-label {
