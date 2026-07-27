@@ -429,7 +429,7 @@ export default function NewInvoice() {
       <AddCustomerModal
         visible={showAddCustomer}
         onClose={() => setShowAddCustomer(false)}
-        onCreated={(c) => {
+        onSaved={(c) => {
           setCustomers((prev) => [...prev, c]);
           setCustomerId(c.id);
           setShowAddCustomer(false);
