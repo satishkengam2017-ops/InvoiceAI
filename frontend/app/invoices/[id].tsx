@@ -111,9 +111,18 @@ export default function InvoiceDetail() {
         const { url } = await api.post<{ url: string }>(`/invoices/${invoice.id}/email-pdf`, {
           html: invoiceHtml(invoice, business as Business),
         });
-        const webBody = `Hi ${customerName}, please find your invoice here: ${url}. Total due: ${total}. Thank you!`;
-        const params = new URLSearchParams({ subject, body: webBody });
-        await Linking.openURL(`mailto:${recipientEmail ?? ""}?${params.toString()}`);
+        // The link sits on its own line, with no adjacent punctuation, so
+        // mail clients' plain-text link auto-detection has a clean boundary
+        // to work with instead of swallowing a trailing "." or "+Total...".
+        const webBody = `Hi ${customerName},\n\nPlease find your invoice here:\n${url}\n\nTotal due: ${total}. Thank you!`;
+        // mailto: (RFC 6068) needs %20 for spaces - URLSearchParams instead
+        // encodes spaces as "+" (the application/x-www-form-urlencoded
+        // convention for HTML forms), which mail clients don't decode back
+        // to spaces, so the recipient sees the raw "Hi+John,+please..." text
+        // and the URL gets glued directly to the following word.
+        const encodedSubject = encodeURIComponent(subject);
+        const encodedBody = encodeURIComponent(webBody);
+        await Linking.openURL(`mailto:${recipientEmail ?? ""}?subject=${encodedSubject}&body=${encodedBody}`);
       } else {
         // Generate the actual PDF and hand it to the OS's native mail
         // composer directly (not the generic share sheet), so the recipient
