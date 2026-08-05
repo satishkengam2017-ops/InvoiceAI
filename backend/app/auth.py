@@ -19,11 +19,29 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db import get_db, to_dict
-from app.models import Business, User, new_id
+from app.models import Business, ExpenseCategory, User, new_id
 
 JWT_SECRET = os.environ.get("JWT_SECRET", "dev-secret-change-me-in-prod-invoiceai-32chars")
 JWT_ALG = "HS256"
 JWT_EXPIRES_MIN = 60 * 24 * 30  # 30 days
+
+DEFAULT_EXPENSE_CATEGORIES = [
+    # (name, illustrative CRA T2125 line — verify exact line numbers with an accountant before filing)
+    ("Advertising & Marketing", "8521 Advertising"),
+    ("Bank Charges & Interest", "8710 Interest and bank charges"),
+    ("Insurance", "8690 Insurance"),
+    ("Meals & Entertainment", "8523 Meals and entertainment"),
+    ("Motor Vehicle Expenses", "9281 Motor vehicle expenses"),
+    ("Office Supplies", "8811 Office expenses"),
+    ("Professional Fees", "8860 Professional fees"),
+    ("Rent", "8910 Rent"),
+    ("Repairs & Maintenance", "8960 Repairs and maintenance"),
+    ("Salaries & Wages", "9060 Salaries, wages and benefits"),
+    ("Supplies", "8811 Office expenses"),
+    ("Travel", "9200 Travel expenses"),
+    ("Utilities", "9220 Utilities"),
+    ("Other Expenses", "9270 Other expenses"),
+]
 
 CLERK_SECRET_KEY = os.environ.get("CLERK_SECRET_KEY", "")
 clerk_client = Clerk(bearer_auth=CLERK_SECRET_KEY)
@@ -112,6 +130,11 @@ async def _create_business_and_user(
     )
     db.add(business)
     db.add(user)
+    for name, cra_line in DEFAULT_EXPENSE_CATEGORIES:
+        db.add(ExpenseCategory(
+            id=new_id(), business_id=business_id, name=name, cra_t2125_line=cra_line,
+            is_default=True, archived=False,
+        ))
     await db.commit()
     return user_id, business_id
 

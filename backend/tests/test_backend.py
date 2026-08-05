@@ -248,6 +248,25 @@ class TestExpenseCategories:
 
 
 # ---------------------------------------------------------------------------
+# Default expense category seeding on business creation
+# ---------------------------------------------------------------------------
+class TestExpenseCategorySeeding:
+    def test_new_business_gets_default_categories(self, fresh_business):
+        s = fresh_business["session"]
+        r = s.get(f"{API}/expense-categories")
+        assert r.status_code == 200
+        rows = r.json()
+        names = {c["name"] for c in rows}
+        assert names == {
+            "Advertising & Marketing", "Bank Charges & Interest", "Insurance",
+            "Meals & Entertainment", "Motor Vehicle Expenses", "Office Supplies",
+            "Professional Fees", "Rent", "Repairs & Maintenance", "Salaries & Wages",
+            "Supplies", "Travel", "Utilities", "Other Expenses",
+        }
+        assert all(c["is_default"] for c in rows)
+
+
+# ---------------------------------------------------------------------------
 # Catalog CRUD
 # ---------------------------------------------------------------------------
 class TestCatalog:
