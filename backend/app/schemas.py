@@ -78,6 +78,18 @@ class CustomerIn(BaseModel):
     notes: Optional[str] = None
 
 
+class VendorIn(BaseModel):
+    name: str
+    email: Optional[EmailStr] = None
+    phone: Optional[str] = None
+    address_line1: Optional[str] = None
+    city: Optional[str] = None
+    region: Optional[str] = None
+    postal_code: Optional[str] = None
+    country: Optional[str] = None
+    notes: Optional[str] = None
+
+
 class CatalogItemIn(BaseModel):
     name: str
     description: Optional[str] = None

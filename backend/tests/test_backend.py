@@ -174,6 +174,51 @@ class TestCustomers:
 
 
 # ---------------------------------------------------------------------------
+# Vendors CRUD + business isolation
+# ---------------------------------------------------------------------------
+class TestVendors:
+    def test_vendor_crud(self, auth_client):
+        r = auth_client.post(f"{API}/vendors", json={
+            "name": "TEST_Acme Supply Co", "email": "TEST_acme-supply@example.com"
+        })
+        assert r.status_code == 200
+        vendor = r.json()
+        vid = vendor["id"]
+        assert vendor["name"] == "TEST_Acme Supply Co"
+
+        r = auth_client.get(f"{API}/vendors/{vid}")
+        assert r.status_code == 200
+        assert r.json()["id"] == vid
+
+        r = auth_client.get(f"{API}/vendors")
+        assert r.status_code == 200
+        assert any(v["id"] == vid for v in r.json())
+
+        r = auth_client.patch(f"{API}/vendors/{vid}", json={"name": "TEST_Acme Supply Co Updated"})
+        assert r.status_code == 200
+        assert r.json()["name"] == "TEST_Acme Supply Co Updated"
+
+        r = auth_client.delete(f"{API}/vendors/{vid}")
+        assert r.status_code == 200
+
+        r = auth_client.get(f"{API}/vendors")
+        assert not any(v["id"] == vid for v in r.json())
+
+    def test_business_isolation(self, auth_client, fresh_business):
+        r = auth_client.post(f"{API}/vendors", json={"name": "TEST_ISO_Vendor"})
+        assert r.status_code == 200
+        primary_vid = r.json()["id"]
+
+        s = fresh_business["session"]
+        r = s.get(f"{API}/vendors")
+        assert r.status_code == 200
+        assert not any(v["id"] == primary_vid for v in r.json())
+
+        r = s.get(f"{API}/vendors/{primary_vid}")
+        assert r.status_code == 404
+
+
+# ---------------------------------------------------------------------------
 # Catalog CRUD
 # ---------------------------------------------------------------------------
 class TestCatalog:
