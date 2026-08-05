@@ -219,6 +219,35 @@ class TestVendors:
 
 
 # ---------------------------------------------------------------------------
+# Expense categories CRUD
+# ---------------------------------------------------------------------------
+class TestExpenseCategories:
+    def test_category_crud(self, auth_client):
+        r = auth_client.post(f"{API}/expense-categories", json={
+            "name": "TEST_Custom Category", "cra_t2125_line": "9270 Other expenses"
+        })
+        assert r.status_code == 200
+        cat = r.json()
+        cat_id = cat["id"]
+        assert cat["name"] == "TEST_Custom Category"
+        assert cat["is_default"] is False
+
+        r = auth_client.get(f"{API}/expense-categories")
+        assert r.status_code == 200
+        assert any(c["id"] == cat_id for c in r.json())
+
+        r = auth_client.patch(f"{API}/expense-categories/{cat_id}", json={"name": "TEST_Custom Category v2"})
+        assert r.status_code == 200
+        assert r.json()["name"] == "TEST_Custom Category v2"
+
+        r = auth_client.delete(f"{API}/expense-categories/{cat_id}")
+        assert r.status_code == 200
+
+        r = auth_client.get(f"{API}/expense-categories")
+        assert not any(c["id"] == cat_id for c in r.json())
+
+
+# ---------------------------------------------------------------------------
 # Catalog CRUD
 # ---------------------------------------------------------------------------
 class TestCatalog:

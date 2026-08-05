@@ -3,7 +3,7 @@ from fastapi import APIRouter, FastAPI
 from starlette.middleware.cors import CORSMiddleware
 
 from app.db import engine
-from app.routers import ai, auth, business, catalog, customers, dashboard, invoices, vendors, webhooks
+from app.routers import ai, auth, business, catalog, customers, dashboard, expense_categories, invoices, vendors, webhooks
 
 app = FastAPI(title="InvoiceAI API")
 api = APIRouter(prefix="/api")
@@ -12,6 +12,7 @@ api.include_router(auth.router)
 api.include_router(business.router)
 api.include_router(customers.router)
 api.include_router(vendors.router)
+api.include_router(expense_categories.router)
 api.include_router(catalog.router)
 api.include_router(invoices.router)
 api.include_router(dashboard.router)

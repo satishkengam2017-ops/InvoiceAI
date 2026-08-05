@@ -90,6 +90,11 @@ class VendorIn(BaseModel):
     notes: Optional[str] = None
 
 
+class ExpenseCategoryIn(BaseModel):
+    name: str
+    cra_t2125_line: Optional[str] = None
+
+
 class CatalogItemIn(BaseModel):
     name: str
     description: Optional[str] = None
