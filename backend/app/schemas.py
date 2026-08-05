@@ -95,6 +95,17 @@ class ExpenseCategoryIn(BaseModel):
     cra_t2125_line: Optional[str] = None
 
 
+class ExpenseIn(BaseModel):
+    vendor_id: Optional[str] = None
+    category_id: str
+    date: str
+    amount_cents: int = Field(ge=0)
+    tax_cents: int = Field(default=0, ge=0)
+    currency: Optional[str] = None
+    payment_method: Optional[str] = None
+    description: Optional[str] = None
+
+
 class CatalogItemIn(BaseModel):
     name: str
     description: Optional[str] = None

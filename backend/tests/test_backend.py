@@ -267,6 +267,81 @@ class TestExpenseCategorySeeding:
 
 
 # ---------------------------------------------------------------------------
+# Expenses CRUD, filters, business isolation, category-in-use protection
+# ---------------------------------------------------------------------------
+class TestExpenses:
+    def _make_category(self, s, name="TEST_Expense Category"):
+        r = s.post(f"{API}/expense-categories", json={"name": name})
+        assert r.status_code == 200
+        return r.json()["id"]
+
+    def test_expense_crud(self, auth_client):
+        cat_id = self._make_category(auth_client)
+        r = auth_client.post(f"{API}/expenses", json={
+            "category_id": cat_id, "date": "2026-08-01", "amount_cents": 4250, "tax_cents": 250,
+            "description": "TEST_Fuel fill-up",
+        })
+        assert r.status_code == 200
+        expense = r.json()
+        eid = expense["id"]
+        assert expense["amount_cents"] == 4250
+        assert expense["currency"]
+
+        r = auth_client.get(f"{API}/expenses/{eid}")
+        assert r.status_code == 200
+        assert r.json()["id"] == eid
+
+        r = auth_client.get(f"{API}/expenses", params={"category_id": cat_id})
+        assert r.status_code == 200
+        assert any(e["id"] == eid for e in r.json())
+
+        r = auth_client.patch(f"{API}/expenses/{eid}", json={
+            "category_id": cat_id, "date": "2026-08-01", "amount_cents": 5000, "tax_cents": 250,
+        })
+        assert r.status_code == 200
+        assert r.json()["amount_cents"] == 5000
+
+        r = auth_client.delete(f"{API}/expenses/{eid}")
+        assert r.status_code == 200
+        r = auth_client.get(f"{API}/expenses/{eid}")
+        assert r.status_code == 404
+
+    def test_date_range_filter(self, fresh_business):
+        s = fresh_business["session"]
+        cat_id = self._make_category(s)
+        s.post(f"{API}/expenses", json={"category_id": cat_id, "date": "2026-01-15", "amount_cents": 1000})
+        s.post(f"{API}/expenses", json={"category_id": cat_id, "date": "2026-06-15", "amount_cents": 2000})
+
+        r = s.get(f"{API}/expenses", params={"from_date": "2026-06-01", "to_date": "2026-06-30"})
+        assert r.status_code == 200
+        rows = r.json()
+        assert len(rows) == 1
+        assert rows[0]["date"] == "2026-06-15"
+
+    def test_business_isolation(self, auth_client, fresh_business):
+        cat_id = self._make_category(auth_client, "TEST_ISO_Category")
+        r = auth_client.post(f"{API}/expenses", json={"category_id": cat_id, "date": "2026-08-01", "amount_cents": 100})
+        assert r.status_code == 200
+        primary_eid = r.json()["id"]
+
+        s = fresh_business["session"]
+        r = s.get(f"{API}/expenses")
+        assert r.status_code == 200
+        assert not any(e["id"] == primary_eid for e in r.json())
+        r = s.get(f"{API}/expenses/{primary_eid}")
+        assert r.status_code == 404
+
+    def test_category_delete_blocked_while_in_use(self, fresh_business):
+        s = fresh_business["session"]
+        cat_id = self._make_category(s, "TEST_In_Use_Category")
+        r = s.post(f"{API}/expenses", json={"category_id": cat_id, "date": "2026-08-01", "amount_cents": 500})
+        assert r.status_code == 200
+
+        r = s.delete(f"{API}/expense-categories/{cat_id}")
+        assert r.status_code == 409
+
+
+# ---------------------------------------------------------------------------
 # Catalog CRUD
 # ---------------------------------------------------------------------------
 class TestCatalog:
