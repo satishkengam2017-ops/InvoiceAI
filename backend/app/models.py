@@ -188,3 +188,50 @@ class PasswordResetCode(Base):
     attempts: Mapped[int] = mapped_column(Integer, default=0)
     used_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class Vendor(Base):
+    __tablename__ = "vendors"
+
+    id: Mapped[str] = mapped_column(PG_UUID(as_uuid=False), primary_key=True, default=new_id)
+    business_id: Mapped[str] = mapped_column(PG_UUID(as_uuid=False), ForeignKey("businesses.id", ondelete="CASCADE"), index=True)
+    name: Mapped[str] = mapped_column(String)
+    email: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    phone: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    address_line1: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    city: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    region: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    postal_code: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    country: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    archived: Mapped[bool] = mapped_column(Boolean, default=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True, onupdate=func.now())
+
+
+class ExpenseCategory(Base):
+    __tablename__ = "expense_categories"
+
+    id: Mapped[str] = mapped_column(PG_UUID(as_uuid=False), primary_key=True, default=new_id)
+    business_id: Mapped[str] = mapped_column(PG_UUID(as_uuid=False), ForeignKey("businesses.id", ondelete="CASCADE"), index=True)
+    name: Mapped[str] = mapped_column(String)
+    cra_t2125_line: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    is_default: Mapped[bool] = mapped_column(Boolean, default=False)
+    archived: Mapped[bool] = mapped_column(Boolean, default=False)
+
+
+class Expense(Base):
+    __tablename__ = "expenses"
+
+    id: Mapped[str] = mapped_column(PG_UUID(as_uuid=False), primary_key=True, default=new_id)
+    business_id: Mapped[str] = mapped_column(PG_UUID(as_uuid=False), ForeignKey("businesses.id", ondelete="CASCADE"), index=True)
+    vendor_id: Mapped[Optional[str]] = mapped_column(PG_UUID(as_uuid=False), ForeignKey("vendors.id"), nullable=True, index=True)
+    category_id: Mapped[str] = mapped_column(PG_UUID(as_uuid=False), ForeignKey("expense_categories.id"), index=True)
+    date: Mapped[str] = mapped_column(Date)
+    amount_cents: Mapped[int] = mapped_column(Integer)
+    tax_cents: Mapped[int] = mapped_column(Integer, default=0)
+    currency: Mapped[str] = mapped_column(String, default="USD")
+    payment_method: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True, onupdate=func.now())
