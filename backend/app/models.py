@@ -37,6 +37,8 @@ class Business(Base):
     currency: Mapped[str] = mapped_column(String, default="USD")
     invoice_prefix: Mapped[str] = mapped_column(String, default="INV")
     next_invoice_no: Mapped[int] = mapped_column(Integer, default=1)
+    estimate_prefix: Mapped[str] = mapped_column(String, default="EST")
+    next_estimate_no: Mapped[int] = mapped_column(Integer, default=1)
     default_terms: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     default_due_days: Mapped[int] = mapped_column(Integer, default=14)
     plan: Mapped[str] = mapped_column(String, default="FREE")
@@ -235,3 +237,50 @@ class Expense(Base):
     description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True, onupdate=func.now())
+
+
+class Estimate(Base):
+    __tablename__ = "estimates"
+
+    id: Mapped[str] = mapped_column(PG_UUID(as_uuid=False), primary_key=True, default=new_id)
+    business_id: Mapped[str] = mapped_column(PG_UUID(as_uuid=False), ForeignKey("businesses.id", ondelete="CASCADE"), index=True)
+    customer_id: Mapped[str] = mapped_column(PG_UUID(as_uuid=False), ForeignKey("customers.id"), index=True)
+    number: Mapped[str] = mapped_column(String)
+    status: Mapped[str] = mapped_column(String, default="DRAFT")
+    currency: Mapped[str] = mapped_column(String, default="USD")
+    issue_date: Mapped[str] = mapped_column(Date)
+    expiry_date: Mapped[Optional[str]] = mapped_column(Date, nullable=True)
+    discount_type: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    discount_value: Mapped[int] = mapped_column(Integer, default=0)
+    subtotal_cents: Mapped[int] = mapped_column(Integer, default=0)
+    tax_total_cents: Mapped[int] = mapped_column(Integer, default=0)
+    discount_cents: Mapped[int] = mapped_column(Integer, default=0)
+    total_cents: Mapped[int] = mapped_column(Integer, default=0)
+    notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    terms: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    converted_invoice_id: Mapped[Optional[str]] = mapped_column(PG_UUID(as_uuid=False), ForeignKey("invoices.id"), nullable=True)
+    sent_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    accepted_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    declined_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    converted_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True, onupdate=func.now())
+
+    line_items: Mapped[list["EstimateLineItem"]] = relationship(
+        back_populates="estimate", cascade="all, delete-orphan", order_by="EstimateLineItem.sort_order"
+    )
+
+
+class EstimateLineItem(Base):
+    __tablename__ = "estimate_line_items"
+
+    id: Mapped[str] = mapped_column(PG_UUID(as_uuid=False), primary_key=True, default=new_id)
+    estimate_id: Mapped[str] = mapped_column(PG_UUID(as_uuid=False), ForeignKey("estimates.id", ondelete="CASCADE"), index=True)
+    sort_order: Mapped[int] = mapped_column(Integer, default=0)
+    name: Mapped[str] = mapped_column(String)
+    description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    quantity: Mapped[float] = mapped_column(Numeric(12, 4))
+    unit_price_cents: Mapped[int] = mapped_column(Integer)
+    tax_percent: Mapped[float] = mapped_column(Numeric(5, 2), default=0)
+
+    estimate: Mapped["Estimate"] = relationship(back_populates="line_items")

@@ -1,17 +1,10 @@
 """Invoice routes: CRUD, line items, totals engine, plan-limit-gated
 create/duplicate, mark-paid/send/void.
 """
-import asyncio
-import ipaddress
-import os
-import socket
 from datetime import date, datetime, timedelta, timezone
-from typing import List, Optional
-from urllib.parse import urlparse
+from typing import Optional
 
-import httpx
 from fastapi import APIRouter, Depends, HTTPException
-from playwright.async_api import async_playwright
 from sqlalchemy import select, update as sql_update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -19,53 +12,13 @@ from sqlalchemy.orm import selectinload
 from app.auth import get_business
 from app.db import get_db, to_dict
 from app.models import Business, Customer, Invoice, LineItem, Payment, new_id
+from app.pdf_export import render_and_upload_pdf
 from app.routers.business import check_plan_limit
 from app.schemas import EmailPdfIn, InvoiceIn, MarkPaidIn
+from app.totals import compute_totals
 
 router = APIRouter(prefix="/invoices", tags=["invoices"])
 
-
-# ---------------------------------------------------------------------------
-# Totals engine (single source of truth) — unchanged logic from pre-migration
-# ---------------------------------------------------------------------------
-def compute_totals(
-    line_items: List[dict],
-    discount_type: Optional[str] = None,
-    discount_value: int = 0,
-) -> dict:
-    subtotal = 0
-    tax_total = 0
-    tax_breakdown: dict = {}
-
-    for li in line_items:
-        qty = float(li.get("quantity", 1))
-        unit_price = int(li.get("unit_price_cents", 0))
-        line_subtotal = round(qty * unit_price)
-        tax_pct = float(li.get("tax_percent", 0) or 0)
-        line_tax = round(line_subtotal * tax_pct / 100)
-        subtotal += line_subtotal
-        tax_total += line_tax
-        if tax_pct > 0:
-            key = f"{tax_pct}"
-            tax_breakdown[key] = tax_breakdown.get(key, 0) + line_tax
-
-    discount_cents = 0
-    if discount_type == "PERCENT" and discount_value:
-        discount_cents = round(subtotal * (discount_value / 10000))
-    elif discount_type == "FIXED" and discount_value:
-        discount_cents = int(discount_value)
-
-    total = subtotal + tax_total - discount_cents
-    if total < 0:
-        total = 0
-
-    return {
-        "subtotal_cents": subtotal,
-        "tax_total_cents": tax_total,
-        "tax_breakdown": [{"percent": float(k), "amount_cents": v} for k, v in tax_breakdown.items()],
-        "discount_cents": discount_cents,
-        "total_cents": total,
-    }
 
 
 def _line_item_dict(li: LineItem) -> dict:
@@ -358,45 +311,6 @@ async def duplicate_invoice(invoice_id: str, ctx: dict = Depends(get_business), 
     return await _serialize_invoice(db, result_inv)
 
 
-def _is_blocked_address(ip_str: str) -> bool:
-    try:
-        ip = ipaddress.ip_address(ip_str)
-    except ValueError:
-        return True  # unparseable -> fail closed
-    return ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved or ip.is_multicast or ip.is_unspecified
-
-
-async def _is_blocked_host(hostname: Optional[str]) -> bool:
-    """SSRF guard for email_pdf's Chromium instance: this endpoint renders
-    client-supplied HTML with network access enabled (needed for
-    business.logo_url, the only legitimate external fetch invoiceHtml()
-    embeds) - without this, any authenticated business could point an <img>
-    at an internal service or cloud metadata endpoint (e.g. 169.254.169.254)
-    and have the response rendered straight into the returned PDF."""
-    if not hostname:
-        return True
-    try:
-        # Resolving here (rather than just regexing the URL string) also
-        # blocks a hostname that merely *resolves* to a private/link-local
-        # address, not just a literal IP in the URL.
-        infos = await asyncio.to_thread(socket.getaddrinfo, hostname, None)
-    except socket.gaierror:
-        return True  # can't resolve -> fail closed
-    return any(_is_blocked_address(info[4][0]) for info in infos)
-
-
-async def _block_private_network_requests(route) -> None:
-    url = route.request.url
-    if url.startswith(("data:", "about:", "blob:")):
-        await route.continue_()
-        return
-    hostname = urlparse(url).hostname
-    if await _is_blocked_host(hostname):
-        await route.abort()
-    else:
-        await route.continue_()
-
-
 @router.post("/{invoice_id}/email-pdf")
 async def email_pdf(
     invoice_id: str, payload: EmailPdfIn, ctx: dict = Depends(get_business), db: AsyncSession = Depends(get_db)
@@ -405,39 +319,5 @@ async def email_pdf(
     inv = await _get_invoice_with_items(db, invoice_id, biz_id)
     if not inv:
         raise HTTPException(status_code=404, detail="Invoice not found")
-
-    async with async_playwright() as p:
-        browser = await p.chromium.launch()
-        try:
-            page = await browser.new_page()
-            await page.route("**/*", _block_private_network_requests)
-            await page.set_content(payload.html, wait_until="networkidle")
-            pdf_bytes = await page.pdf(format="A4", print_background=True)
-        finally:
-            await browser.close()
-
-    supabase_url = os.environ["SUPABASE_URL"].rstrip("/")
-    service_key = os.environ["SUPABASE_SERVICE_ROLE_KEY"]
-    # inv.id (not inv.number) in the path: invoice numbers are influenced by
-    # the tenant-settable, unsanitized Business.invoice_prefix field, so a
-    # malicious business could otherwise inject "/" or "../" into a shared
-    # public bucket's object path. inv.id is a database-generated UUID with
-    # no user-controlled content, so it's safe by construction.
-    object_path = f"{biz_id}/{inv.id}.pdf"
-    upload_url = f"{supabase_url}/storage/v1/object/InvoiceAI/{object_path}"
-
-    async with httpx.AsyncClient() as client:
-        resp = await client.post(
-            upload_url,
-            content=pdf_bytes,
-            headers={
-                "Authorization": f"Bearer {service_key}",
-                "Content-Type": "application/pdf",
-                "x-upsert": "true",
-            },
-        )
-    if resp.status_code >= 300:
-        raise HTTPException(status_code=502, detail="Failed to upload invoice PDF")
-
-    public_url = f"{supabase_url}/storage/v1/object/public/InvoiceAI/{object_path}"
-    return {"url": public_url}
+    url = await render_and_upload_pdf(payload.html, biz_id, inv.id)
+    return {"url": url}

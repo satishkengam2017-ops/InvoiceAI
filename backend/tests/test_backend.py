@@ -647,6 +647,290 @@ class TestInvoicesLifecycle:
 
 
 # ---------------------------------------------------------------------------
+# Estimates CRUD + business isolation
+# ---------------------------------------------------------------------------
+class TestEstimatesCRUD:
+    def _make_customer(self, s, name="TEST_Cust_Est"):
+        r = s.post(f"{API}/customers", json={"name": name})
+        assert r.status_code == 200, r.text
+        return r.json()["id"]
+
+    def test_estimate_crud(self, fresh_business):
+        s = fresh_business["session"]
+        cid = self._make_customer(s)
+        payload = {
+            "customer_id": cid,
+            "line_items": [{"name": "Item A", "quantity": 2, "unit_price_cents": 10000, "tax_percent": 10}],
+            "discount_type": "FIXED",
+            "discount_value": 2000,
+        }
+        r = s.post(f"{API}/estimates", json=payload)
+        assert r.status_code == 200, r.text
+        est = r.json()
+        assert est["number"].startswith("EST-")
+        assert est["number"].endswith("0001")
+        assert est["subtotal_cents"] == 20000
+        assert est["tax_total_cents"] == 2000
+        assert est["discount_cents"] == 2000
+        assert est["total_cents"] == 20000
+        assert est["status"] == "DRAFT"
+        eid = est["id"]
+
+        r = s.get(f"{API}/estimates/{eid}")
+        assert r.status_code == 200
+        assert r.json()["id"] == eid
+
+        r = s.get(f"{API}/estimates")
+        assert r.status_code == 200
+        assert any(e["id"] == eid for e in r.json())
+
+        r = s.patch(f"{API}/estimates/{eid}", json={
+            "customer_id": cid,
+            "line_items": [{"name": "Item B", "quantity": 1, "unit_price_cents": 5000}],
+        })
+        assert r.status_code == 200
+        assert r.json()["total_cents"] == 5000
+        names = [li["name"] for li in r.json()["line_items"]]
+        assert names == ["Item B"]
+
+        r = s.delete(f"{API}/estimates/{eid}")
+        assert r.status_code == 200
+        r = s.get(f"{API}/estimates/{eid}")
+        assert r.status_code == 404
+
+    def test_delete_blocked_once_sent(self, fresh_business):
+        # Drives the estimate to SENT via the real POST /estimates/{id}/send
+        # lifecycle endpoint (added in Task 5), rather than the removed
+        # client-settable `status` on create (POST /estimates always creates
+        # a DRAFT now - see Finding 4 of the final backend review).
+        s = fresh_business["session"]
+        cid = self._make_customer(s)
+        r = s.post(f"{API}/estimates", json={
+            "customer_id": cid,
+            "line_items": [{"name": "Item", "quantity": 1, "unit_price_cents": 1000}],
+        })
+        assert r.status_code == 200, r.text
+        est = r.json()
+        assert est["status"] == "DRAFT"
+        eid = est["id"]
+
+        r = s.post(f"{API}/estimates/{eid}/send")
+        assert r.status_code == 200, r.text
+        est = r.json()
+        assert est["status"] == "SENT"
+
+        r = s.delete(f"{API}/estimates/{eid}")
+        assert r.status_code == 400
+
+        r = s.patch(f"{API}/estimates/{eid}", json={
+            "customer_id": cid,
+            "line_items": [{"name": "Item", "quantity": 1, "unit_price_cents": 1000}],
+        })
+        assert r.status_code == 400
+
+    def test_business_isolation(self, auth_client, fresh_business):
+        r = auth_client.post(f"{API}/customers", json={"name": "TEST_ISO_Est_Cust"})
+        assert r.status_code == 200
+        cid = r.json()["id"]
+        r = auth_client.post(f"{API}/estimates", json={
+            "customer_id": cid,
+            "line_items": [{"name": "Item", "quantity": 1, "unit_price_cents": 1000}],
+        })
+        assert r.status_code == 200
+        primary_eid = r.json()["id"]
+
+        s = fresh_business["session"]
+        r = s.get(f"{API}/estimates")
+        assert r.status_code == 200
+        assert not any(e["id"] == primary_eid for e in r.json())
+        r = s.get(f"{API}/estimates/{primary_eid}")
+        assert r.status_code == 404
+
+
+# ---------------------------------------------------------------------------
+# Estimate lifecycle: send / accept / decline / duplicate
+# ---------------------------------------------------------------------------
+class TestEstimatesLifecycle:
+    def _make_estimate(self, s, cust_name="TEST_Cust_EstLC"):
+        r = s.post(f"{API}/customers", json={"name": cust_name})
+        assert r.status_code == 200
+        cid = r.json()["id"]
+        r = s.post(f"{API}/estimates", json={
+            "customer_id": cid,
+            "line_items": [{"name": "Item", "quantity": 1, "unit_price_cents": 5000}],
+        })
+        assert r.status_code == 200, r.text
+        return r.json()
+
+    def test_send_accept_flow(self, fresh_business):
+        s = fresh_business["session"]
+        est = self._make_estimate(s)
+
+        r = s.post(f"{API}/estimates/{est['id']}/send")
+        assert r.status_code == 200
+        assert r.json()["status"] == "SENT"
+        assert r.json()["sent_at"]
+
+        r = s.post(f"{API}/estimates/{est['id']}/accept")
+        assert r.status_code == 200
+        assert r.json()["status"] == "ACCEPTED"
+        assert r.json()["accepted_at"]
+
+    def test_accept_before_send_rejected(self, fresh_business):
+        s = fresh_business["session"]
+        est = self._make_estimate(s)
+        r = s.post(f"{API}/estimates/{est['id']}/accept")
+        assert r.status_code == 400
+
+    def test_decline_flow(self, fresh_business):
+        s = fresh_business["session"]
+        est = self._make_estimate(s)
+        s.post(f"{API}/estimates/{est['id']}/send")
+
+        r = s.post(f"{API}/estimates/{est['id']}/decline")
+        assert r.status_code == 200
+        assert r.json()["status"] == "DECLINED"
+        assert r.json()["declined_at"]
+
+        # A declined estimate can't then be accepted.
+        r = s.post(f"{API}/estimates/{est['id']}/accept")
+        assert r.status_code == 400
+
+    def test_duplicate(self, fresh_business):
+        s = fresh_business["session"]
+        est = self._make_estimate(s)
+        s.post(f"{API}/estimates/{est['id']}/send")
+
+        r = s.post(f"{API}/estimates/{est['id']}/duplicate")
+        assert r.status_code == 200
+        dup = r.json()
+        assert dup["id"] != est["id"]
+        assert dup["status"] == "DRAFT"
+        assert dup["number"].endswith("0002")
+        assert dup["total_cents"] == est["total_cents"]
+        names = [li["name"] for li in dup["line_items"]]
+        assert names == ["Item"]
+
+
+# ---------------------------------------------------------------------------
+# Estimate convert-to-invoice and email-pdf
+# ---------------------------------------------------------------------------
+class TestEstimatesConvertAndEmail:
+    def _make_estimate(self, s, cust_name="TEST_Cust_EstConv"):
+        r = s.post(f"{API}/customers", json={"name": cust_name})
+        assert r.status_code == 200
+        cid = r.json()["id"]
+        r = s.post(f"{API}/estimates", json={
+            "customer_id": cid,
+            "line_items": [{"name": "Roof repair", "quantity": 1, "unit_price_cents": 45000, "tax_percent": 5}],
+        })
+        assert r.status_code == 200, r.text
+        return r.json()
+
+    def test_convert_creates_matching_invoice(self, fresh_business):
+        s = fresh_business["session"]
+        est = self._make_estimate(s)
+        s.post(f"{API}/estimates/{est['id']}/send")
+        s.post(f"{API}/estimates/{est['id']}/accept")
+
+        r = s.post(f"{API}/estimates/{est['id']}/convert")
+        assert r.status_code == 200, r.text
+        inv = r.json()
+        assert inv["number"].startswith("INV-")
+        assert inv["status"] == "DRAFT"
+        assert inv["total_cents"] == est["total_cents"]
+        assert inv["customer"]["id"] == est["customer_id"]
+        names = [li["name"] for li in inv["line_items"]]
+        assert names == ["Roof repair"]
+
+        r = s.get(f"{API}/estimates/{est['id']}")
+        assert r.status_code == 200
+        updated_est = r.json()
+        assert updated_est["status"] == "CONVERTED"
+        assert updated_est["converted_invoice_id"] == inv["id"]
+        assert updated_est["converted_at"]
+
+        # The resulting invoice is real and independently fetchable.
+        r = s.get(f"{API}/invoices/{inv['id']}")
+        assert r.status_code == 200
+        assert r.json()["total_cents"] == est["total_cents"]
+
+    def test_convert_blocked_from_declined(self, fresh_business):
+        s = fresh_business["session"]
+        est = self._make_estimate(s)
+        s.post(f"{API}/estimates/{est['id']}/send")
+        s.post(f"{API}/estimates/{est['id']}/decline")
+
+        r = s.post(f"{API}/estimates/{est['id']}/convert")
+        assert r.status_code == 400
+
+    def test_convert_blocked_when_already_converted(self, fresh_business):
+        s = fresh_business["session"]
+        est = self._make_estimate(s)
+        r = s.post(f"{API}/estimates/{est['id']}/convert")
+        assert r.status_code == 200
+
+        r = s.post(f"{API}/estimates/{est['id']}/convert")
+        assert r.status_code == 400
+
+    def test_email_pdf_from_other_business_rejected(self, auth_client, fresh_business):
+        # Same regression shape as invoices.py's equivalent test: the 404
+        # check runs before any PDF rendering or Supabase upload, so this
+        # needs no external infra beyond the app itself.
+        s = fresh_business["session"]
+        est = self._make_estimate(s, cust_name="TEST_Cust_EstEmail")
+
+        r = auth_client.post(f"{API}/estimates/{est['id']}/email-pdf", json={
+            "html": "<html><body>Should not render</body></html>",
+        })
+        assert r.status_code == 404
+
+    def test_convert_blocked_over_plan_limit(self, fresh_business):
+        # Mirrors TestInvoicesLifecycle.test_free_plan_lifetime_limit: the
+        # FREE plan allows 5 invoices lifetime (PLAN_LIMITS in
+        # app/routers/business.py). check_plan_limit counts Invoice rows
+        # regardless of how they were created, so filling the quota with
+        # plain invoices and then attempting to convert an estimate must
+        # still be blocked with 402 PLAN_LIMIT_REACHED.
+        s = fresh_business["session"]
+        est = self._make_estimate(s)
+        s.post(f"{API}/estimates/{est['id']}/send")
+        s.post(f"{API}/estimates/{est['id']}/accept")
+
+        cid = est["customer_id"]
+        invoice_payload = {
+            "customer_id": cid,
+            "line_items": [{"name": "Item", "quantity": 1, "unit_price_cents": 1000}],
+        }
+        created = 0
+        for _ in range(5):
+            r = s.post(f"{API}/invoices", json=invoice_payload)
+            if r.status_code == 200:
+                created += 1
+            else:
+                break
+        assert created == 5, f"Expected to create 5, only created {created}"
+
+        r = s.post(f"{API}/estimates/{est['id']}/convert")
+        assert r.status_code == 402, r.text
+        detail = r.json().get("detail", {})
+        if isinstance(detail, dict):
+            assert detail.get("error") == "PLAN_LIMIT_REACHED"
+
+    def test_convert_from_other_business_rejected(self, auth_client, fresh_business):
+        # Cross-tenant isolation specifically on convert: existing isolation
+        # tests only cover GET list/detail, not the highest-consequence
+        # lifecycle action (it mutates state and creates a real invoice).
+        s = fresh_business["session"]
+        est = self._make_estimate(s, cust_name="TEST_Cust_EstConvXBiz")
+        s.post(f"{API}/estimates/{est['id']}/send")
+        s.post(f"{API}/estimates/{est['id']}/accept")
+
+        r = auth_client.post(f"{API}/estimates/{est['id']}/convert")
+        assert r.status_code == 404, r.text
+
+
+# ---------------------------------------------------------------------------
 # Dashboard
 # ---------------------------------------------------------------------------
 class TestDashboard:

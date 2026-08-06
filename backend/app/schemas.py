@@ -137,6 +137,17 @@ class InvoiceIn(BaseModel):
     status: Optional[str] = "DRAFT"
 
 
+class EstimateIn(BaseModel):
+    customer_id: str
+    issue_date: Optional[str] = None
+    expiry_date: Optional[str] = None
+    line_items: List[LineItemIn]
+    discount_type: Optional[str] = None  # PERCENT | FIXED
+    discount_value: Optional[int] = 0
+    notes: Optional[str] = None
+    terms: Optional[str] = None
+
+
 class AIExtractIn(BaseModel):
     text: str
 
