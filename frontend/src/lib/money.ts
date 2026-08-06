@@ -22,7 +22,7 @@ export function parseCents(input: string): number {
 
 export type LineItem = {
   name: string;
-  description?: string;
+  description?: string | null;
   quantity: number;
   unit_price_cents: number;
   tax_percent?: number;
