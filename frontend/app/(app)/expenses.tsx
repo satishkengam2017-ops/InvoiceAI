@@ -1,10 +1,12 @@
 import { Feather } from "@expo/vector-icons";
 import { useFocusEffect } from "expo-router";
+import * as ImagePicker from "expo-image-picker";
 import React, { useCallback, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
   FlatList,
+  Platform,
   RefreshControl,
   StyleSheet,
   Text,
@@ -14,10 +16,11 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { AddExpenseModal } from "@/src/components/AddExpenseModal";
+import type { ExpensePrefill } from "@/src/components/AddExpenseModal";
 import { Button } from "@/src/components/Button";
 import { EmptyState } from "@/src/components/Card";
 import { ManageCategoriesModal } from "@/src/components/ManageCategoriesModal";
-import { api } from "@/src/lib/api";
+import { api, scanReceipt } from "@/src/lib/api";
 import { confirmAsync } from "@/src/lib/confirm";
 import { formatMoney } from "@/src/lib/money";
 import { colors, radius, spacing, typography, webContent } from "@/src/lib/theme";
@@ -32,6 +35,8 @@ export default function Expenses() {
   const [editing, setEditing] = useState<Expense | null>(null);
   const [showAdd, setShowAdd] = useState(false);
   const [showManageCategories, setShowManageCategories] = useState(false);
+  const [prefill, setPrefill] = useState<ExpensePrefill | null>(null);
+  const [scanning, setScanning] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -67,6 +72,35 @@ export default function Expenses() {
     }
   };
 
+  const scanReceiptPhoto = async () => {
+    let result: ImagePicker.ImagePickerResult;
+    if (Platform.OS === "web") {
+      result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ImagePicker.MediaTypeOptions.Images, quality: 0.7 });
+    } else {
+      const perm = await ImagePicker.requestCameraPermissionsAsync();
+      if (!perm.granted) {
+        Alert.alert("Camera access needed", "Enable camera access in your device settings to scan receipts.");
+        return;
+      }
+      result = await ImagePicker.launchCameraAsync({ mediaTypes: ImagePicker.MediaTypeOptions.Images, quality: 0.7 });
+    }
+    if (result.canceled || !result.assets?.[0]) return;
+
+    const asset = result.assets[0];
+    setScanning(true);
+    try {
+      const extracted = await scanReceipt(asset.uri, asset.fileName || "receipt.jpg", asset.mimeType || "image/jpeg");
+      setPrefill(extracted);
+    } catch {
+      setPrefill(null);
+      Alert.alert("Couldn't read that receipt", "Enter the expense manually instead.");
+    } finally {
+      setScanning(false);
+      setEditing(null);
+      setShowAdd(true);
+    }
+  };
+
   return (
     <SafeAreaView style={styles.safe} edges={["top"]}>
       <View style={[styles.header, webContent]}>
@@ -74,6 +108,9 @@ export default function Expenses() {
         <View style={styles.headerActions}>
           <TouchableOpacity testID="expenses-manage-categories" onPress={() => setShowManageCategories(true)} style={styles.iconBtn}>
             <Feather name="tag" size={18} color={colors.brand} />
+          </TouchableOpacity>
+          <TouchableOpacity testID="expenses-scan-btn" onPress={scanReceiptPhoto} style={styles.iconBtn} disabled={scanning}>
+            {scanning ? <ActivityIndicator size="small" color={colors.brand} /> : <Feather name="camera" size={18} color={colors.brand} />}
           </TouchableOpacity>
           <TouchableOpacity testID="expenses-add-btn" onPress={() => { setEditing(null); setShowAdd(true); }} style={styles.newBtn}>
             <Feather name="plus" size={16} color={colors.onBrandPrimary} />
@@ -125,10 +162,11 @@ export default function Expenses() {
       <AddExpenseModal
         visible={showAdd}
         expense={editing}
+        prefill={prefill}
         categories={categories}
         vendors={vendors}
-        onClose={() => setShowAdd(false)}
-        onSaved={() => { setShowAdd(false); load(); }}
+        onClose={() => { setShowAdd(false); setPrefill(null); }}
+        onSaved={() => { setShowAdd(false); setPrefill(null); load(); }}
         onVendorCreated={(v) => setVendors((prev) => [...prev, v])}
       />
 
