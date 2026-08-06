@@ -190,3 +190,95 @@ async def delete_estimate(estimate_id: str, ctx: dict = Depends(get_business), d
     await db.delete(est)
     await db.commit()
     return {"ok": True}
+
+
+@router.post("/{estimate_id}/send")
+async def send_estimate(estimate_id: str, ctx: dict = Depends(get_business), db: AsyncSession = Depends(get_db)):
+    biz_id = ctx["business"]["id"]
+    est = await _get_estimate_with_items(db, estimate_id, biz_id)
+    if not est:
+        raise HTTPException(status_code=404, detail="Estimate not found")
+    if est.status == "DRAFT":
+        est.status = "SENT"
+        est.sent_at = datetime.now(timezone.utc)
+        est.updated_at = datetime.now(timezone.utc)
+        await db.commit()
+        est = await _get_estimate_with_items(db, estimate_id, biz_id)
+    return await _serialize_estimate(db, est)
+
+
+@router.post("/{estimate_id}/accept")
+async def accept_estimate(estimate_id: str, ctx: dict = Depends(get_business), db: AsyncSession = Depends(get_db)):
+    biz_id = ctx["business"]["id"]
+    est = await _get_estimate_with_items(db, estimate_id, biz_id)
+    if not est:
+        raise HTTPException(status_code=404, detail="Estimate not found")
+    if est.status != "SENT":
+        raise HTTPException(status_code=400, detail="Only SENT estimates can be accepted")
+    est.status = "ACCEPTED"
+    est.accepted_at = datetime.now(timezone.utc)
+    est.updated_at = datetime.now(timezone.utc)
+    await db.commit()
+    est = await _get_estimate_with_items(db, estimate_id, biz_id)
+    return await _serialize_estimate(db, est)
+
+
+@router.post("/{estimate_id}/decline")
+async def decline_estimate(estimate_id: str, ctx: dict = Depends(get_business), db: AsyncSession = Depends(get_db)):
+    biz_id = ctx["business"]["id"]
+    est = await _get_estimate_with_items(db, estimate_id, biz_id)
+    if not est:
+        raise HTTPException(status_code=404, detail="Estimate not found")
+    if est.status != "SENT":
+        raise HTTPException(status_code=400, detail="Only SENT estimates can be declined")
+    est.status = "DECLINED"
+    est.declined_at = datetime.now(timezone.utc)
+    est.updated_at = datetime.now(timezone.utc)
+    await db.commit()
+    est = await _get_estimate_with_items(db, estimate_id, biz_id)
+    return await _serialize_estimate(db, est)
+
+
+@router.post("/{estimate_id}/duplicate")
+async def duplicate_estimate(estimate_id: str, ctx: dict = Depends(get_business), db: AsyncSession = Depends(get_db)):
+    biz = ctx["business"]
+    biz_id = biz["id"]
+    est = await _get_estimate_with_items(db, estimate_id, biz_id)
+    if not est:
+        raise HTTPException(status_code=404, detail="Estimate not found")
+
+    seq = (await db.execute(
+        sql_update(Business)
+        .where(Business.id == biz_id)
+        .values(next_estimate_no=Business.next_estimate_no + 1)
+        .returning(Business.next_estimate_no)
+    )).scalar_one() - 1
+    number = f"{biz.get('estimate_prefix', 'EST')}-{str(seq).zfill(4)}"
+
+    new_estimate = Estimate(
+        id=new_id(),
+        business_id=biz_id,
+        customer_id=est.customer_id,
+        number=number,
+        status="DRAFT",
+        currency=est.currency,
+        issue_date=est.issue_date,
+        expiry_date=est.expiry_date,
+        discount_type=est.discount_type,
+        discount_value=est.discount_value,
+        subtotal_cents=est.subtotal_cents,
+        tax_total_cents=est.tax_total_cents,
+        discount_cents=est.discount_cents,
+        total_cents=est.total_cents,
+        notes=est.notes,
+        terms=est.terms,
+    )
+    for li in sorted(est.line_items, key=lambda x: x.sort_order):
+        new_estimate.line_items.append(EstimateLineItem(
+            sort_order=li.sort_order, name=li.name, description=li.description,
+            quantity=li.quantity, unit_price_cents=li.unit_price_cents, tax_percent=li.tax_percent,
+        ))
+    db.add(new_estimate)
+    await db.commit()
+    result_est = await _get_estimate_with_items(db, new_estimate.id, biz_id)
+    return await _serialize_estimate(db, result_est)

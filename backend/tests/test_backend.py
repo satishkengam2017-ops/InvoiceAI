@@ -750,6 +750,71 @@ class TestEstimatesCRUD:
 
 
 # ---------------------------------------------------------------------------
+# Estimate lifecycle: send / accept / decline / duplicate
+# ---------------------------------------------------------------------------
+class TestEstimatesLifecycle:
+    def _make_estimate(self, s, cust_name="TEST_Cust_EstLC"):
+        r = s.post(f"{API}/customers", json={"name": cust_name})
+        assert r.status_code == 200
+        cid = r.json()["id"]
+        r = s.post(f"{API}/estimates", json={
+            "customer_id": cid,
+            "line_items": [{"name": "Item", "quantity": 1, "unit_price_cents": 5000}],
+        })
+        assert r.status_code == 200, r.text
+        return r.json()
+
+    def test_send_accept_flow(self, fresh_business):
+        s = fresh_business["session"]
+        est = self._make_estimate(s)
+
+        r = s.post(f"{API}/estimates/{est['id']}/send")
+        assert r.status_code == 200
+        assert r.json()["status"] == "SENT"
+        assert r.json()["sent_at"]
+
+        r = s.post(f"{API}/estimates/{est['id']}/accept")
+        assert r.status_code == 200
+        assert r.json()["status"] == "ACCEPTED"
+        assert r.json()["accepted_at"]
+
+    def test_accept_before_send_rejected(self, fresh_business):
+        s = fresh_business["session"]
+        est = self._make_estimate(s)
+        r = s.post(f"{API}/estimates/{est['id']}/accept")
+        assert r.status_code == 400
+
+    def test_decline_flow(self, fresh_business):
+        s = fresh_business["session"]
+        est = self._make_estimate(s)
+        s.post(f"{API}/estimates/{est['id']}/send")
+
+        r = s.post(f"{API}/estimates/{est['id']}/decline")
+        assert r.status_code == 200
+        assert r.json()["status"] == "DECLINED"
+        assert r.json()["declined_at"]
+
+        # A declined estimate can't then be accepted.
+        r = s.post(f"{API}/estimates/{est['id']}/accept")
+        assert r.status_code == 400
+
+    def test_duplicate(self, fresh_business):
+        s = fresh_business["session"]
+        est = self._make_estimate(s)
+        s.post(f"{API}/estimates/{est['id']}/send")
+
+        r = s.post(f"{API}/estimates/{est['id']}/duplicate")
+        assert r.status_code == 200
+        dup = r.json()
+        assert dup["id"] != est["id"]
+        assert dup["status"] == "DRAFT"
+        assert dup["number"].endswith("0002")
+        assert dup["total_cents"] == est["total_cents"]
+        names = [li["name"] for li in dup["line_items"]]
+        assert names == ["Item"]
+
+
+# ---------------------------------------------------------------------------
 # Dashboard
 # ---------------------------------------------------------------------------
 class TestDashboard:
