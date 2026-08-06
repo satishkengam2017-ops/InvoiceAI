@@ -75,4 +75,7 @@ export const statusColors: Record<string, { bg: string; fg: string; label: strin
   PAID: { bg: colors.brandTertiary, fg: colors.brand, label: "Paid" },
   OVERDUE: { bg: "#FEE2E2", fg: colors.error, label: "Overdue" },
   VOID: { bg: colors.surfaceTertiary, fg: colors.muted, label: "Void" },
+  ACCEPTED: { bg: colors.brandTertiary, fg: colors.brand, label: "Accepted" },
+  DECLINED: { bg: "#FEE2E2", fg: colors.error, label: "Declined" },
+  CONVERTED: { bg: colors.surfaceTertiary, fg: colors.onSurfaceTertiary, label: "Converted" },
 };

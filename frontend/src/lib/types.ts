@@ -112,6 +112,35 @@ export type Invoice = {
   created_at: string;
 };
 
+export type EstimateStatus = "DRAFT" | "SENT" | "ACCEPTED" | "DECLINED" | "CONVERTED";
+
+export type Estimate = {
+  id: string;
+  business_id: string;
+  customer_id: string;
+  customer?: Customer | null;
+  number: string;
+  status: EstimateStatus;
+  currency: string;
+  issue_date: string;
+  expiry_date?: string | null;
+  line_items: LineItemDto[];
+  subtotal_cents: number;
+  tax_total_cents: number;
+  discount_cents: number;
+  discount_type?: "PERCENT" | "FIXED" | null;
+  discount_value?: number;
+  total_cents: number;
+  notes?: string | null;
+  terms?: string | null;
+  converted_invoice_id?: string | null;
+  sent_at?: string | null;
+  accepted_at?: string | null;
+  declined_at?: string | null;
+  converted_at?: string | null;
+  created_at: string;
+};
+
 export type Business = {
   id: string;
   name: string;
