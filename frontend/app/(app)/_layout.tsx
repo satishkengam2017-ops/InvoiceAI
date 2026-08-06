@@ -51,6 +51,13 @@ export default function AppLayout() {
         }}
       />
       <Tabs.Screen
+        name="expenses"
+        options={{
+          title: "Expenses",
+          tabBarIcon: ({ color, size }) => <Feather name="credit-card" size={size} color={color} />,
+        }}
+      />
+      <Tabs.Screen
         name="vendors"
         options={{ href: null }}
       />
