@@ -61,12 +61,12 @@ export default function Invoices() {
 
   const load = useCallback(async () => {
     try {
-      const [invoices, estimates] = await Promise.all([
+      const [invoicesResult, estimatesResult] = await Promise.allSettled([
         api.get<Invoice[]>("/invoices"),
         api.get<Estimate[]>("/estimates"),
       ]);
-      setInvoiceItems(invoices);
-      setEstimateItems(estimates);
+      if (invoicesResult.status === "fulfilled") setInvoiceItems(invoicesResult.value);
+      if (estimatesResult.status === "fulfilled") setEstimateItems(estimatesResult.value);
     } catch {
       /* ignore — AuthContext redirects if the session is invalid */
     } finally {
@@ -167,7 +167,7 @@ export default function Invoices() {
         <Feather name="search" size={16} color={colors.muted} />
         <TextInput
           testID="invoices-search"
-          placeholder={mode === "INVOICES" ? "Search by number or customer" : "Search by number or customer"}
+          placeholder="Search by number or customer"
           placeholderTextColor={colors.muted}
           style={styles.searchInput}
           value={search}
@@ -204,7 +204,7 @@ export default function Invoices() {
           return (
             <TouchableOpacity
               key={f.key}
-              testID={`invoices-chip-${f.key.toLowerCase()}`}
+              testID={`${mode === "INVOICES" ? "invoices" : "estimates"}-chip-${f.key.toLowerCase()}`}
               onPress={() => (mode === "INVOICES" ? setInvoiceFilter(f.key as "ALL" | InvoiceStatus) : setEstimateFilter(f.key as "ALL" | EstimateStatus))}
               activeOpacity={0.85}
               style={[styles.chip, active && styles.chipActive]}
