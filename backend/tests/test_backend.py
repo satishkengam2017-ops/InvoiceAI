@@ -647,6 +647,109 @@ class TestInvoicesLifecycle:
 
 
 # ---------------------------------------------------------------------------
+# Estimates CRUD + business isolation
+# ---------------------------------------------------------------------------
+class TestEstimatesCRUD:
+    def _make_customer(self, s, name="TEST_Cust_Est"):
+        r = s.post(f"{API}/customers", json={"name": name})
+        assert r.status_code == 200, r.text
+        return r.json()["id"]
+
+    def test_estimate_crud(self, fresh_business):
+        s = fresh_business["session"]
+        cid = self._make_customer(s)
+        payload = {
+            "customer_id": cid,
+            "line_items": [{"name": "Item A", "quantity": 2, "unit_price_cents": 10000, "tax_percent": 10}],
+            "discount_type": "FIXED",
+            "discount_value": 2000,
+        }
+        r = s.post(f"{API}/estimates", json=payload)
+        assert r.status_code == 200, r.text
+        est = r.json()
+        assert est["number"].startswith("EST-")
+        assert est["number"].endswith("0001")
+        assert est["subtotal_cents"] == 20000
+        assert est["tax_total_cents"] == 2000
+        assert est["discount_cents"] == 2000
+        assert est["total_cents"] == 20000
+        assert est["status"] == "DRAFT"
+        eid = est["id"]
+
+        r = s.get(f"{API}/estimates/{eid}")
+        assert r.status_code == 200
+        assert r.json()["id"] == eid
+
+        r = s.get(f"{API}/estimates")
+        assert r.status_code == 200
+        assert any(e["id"] == eid for e in r.json())
+
+        r = s.patch(f"{API}/estimates/{eid}", json={
+            "customer_id": cid,
+            "line_items": [{"name": "Item B", "quantity": 1, "unit_price_cents": 5000}],
+        })
+        assert r.status_code == 200
+        assert r.json()["total_cents"] == 5000
+        names = [li["name"] for li in r.json()["line_items"]]
+        assert names == ["Item B"]
+
+        r = s.delete(f"{API}/estimates/{eid}")
+        assert r.status_code == 200
+        r = s.get(f"{API}/estimates/{eid}")
+        assert r.status_code == 404
+
+    def test_delete_blocked_once_sent(self, fresh_business):
+        # NOTE: deviates from the plan's literal test body, which drove this
+        # via POST /estimates/{id}/send. That endpoint doesn't exist yet -
+        # it's added by Task 5 (TestEstimatesLifecycle), which runs after
+        # this task. Task 4's own EstimateIn/create_estimate already accepts
+        # an explicit `status` on creation (mirroring how InvoiceIn/
+        # create_invoice accepts `status` too), so we reach the same "estimate
+        # in a non-DRAFT state" precondition directly through create, without
+        # depending on a not-yet-implemented endpoint. Once Task 5 lands,
+        # this still exercises the identical PATCH/DELETE-blocked-once-
+        # non-DRAFT behavior; only the setup path differs.
+        s = fresh_business["session"]
+        cid = self._make_customer(s)
+        r = s.post(f"{API}/estimates", json={
+            "customer_id": cid,
+            "line_items": [{"name": "Item", "quantity": 1, "unit_price_cents": 1000}],
+            "status": "SENT",
+        })
+        assert r.status_code == 200, r.text
+        est = r.json()
+        assert est["status"] == "SENT"
+        eid = est["id"]
+
+        r = s.delete(f"{API}/estimates/{eid}")
+        assert r.status_code == 400
+
+        r = s.patch(f"{API}/estimates/{eid}", json={
+            "customer_id": cid,
+            "line_items": [{"name": "Item", "quantity": 1, "unit_price_cents": 1000}],
+        })
+        assert r.status_code == 400
+
+    def test_business_isolation(self, auth_client, fresh_business):
+        r = auth_client.post(f"{API}/customers", json={"name": "TEST_ISO_Est_Cust"})
+        assert r.status_code == 200
+        cid = r.json()["id"]
+        r = auth_client.post(f"{API}/estimates", json={
+            "customer_id": cid,
+            "line_items": [{"name": "Item", "quantity": 1, "unit_price_cents": 1000}],
+        })
+        assert r.status_code == 200
+        primary_eid = r.json()["id"]
+
+        s = fresh_business["session"]
+        r = s.get(f"{API}/estimates")
+        assert r.status_code == 200
+        assert not any(e["id"] == primary_eid for e in r.json())
+        r = s.get(f"{API}/estimates/{primary_eid}")
+        assert r.status_code == 404
+
+
+# ---------------------------------------------------------------------------
 # Dashboard
 # ---------------------------------------------------------------------------
 class TestDashboard:
