@@ -62,7 +62,7 @@ async def archive_expense_category(
     if not category:
         return {"ok": True}
     in_use = (await db.execute(
-        select(Expense.id).where(Expense.category_id == category_id).limit(1)
+        select(Expense.id).where(Expense.category_id == category_id, Expense.business_id == biz_id).limit(1)
     )).scalar_one_or_none()
     if in_use:
         raise HTTPException(status_code=409, detail="Category is used by existing expenses and can't be removed.")

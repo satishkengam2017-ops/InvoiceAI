@@ -1,5 +1,6 @@
 """Expense CRUD routes."""
 import base64
+import uuid as uuid_module
 from datetime import date, datetime, timezone
 from typing import Optional
 
@@ -10,12 +11,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth import get_business
 from app.db import get_db, to_dict
-from app.models import Expense, ExpenseCategory, new_id
+from app.models import Expense, ExpenseCategory, Vendor, new_id
 from app.schemas import ExpenseIn
 
 router = APIRouter(prefix="/expenses", tags=["expenses"])
 
 ALLOWED_IMAGE_TYPES = {"image/jpeg", "image/png", "image/webp", "image/gif"}
+MAX_RECEIPT_IMAGE_BYTES = int(3.5 * 1024 * 1024)  # ~3.5MB, under Anthropic's per-image limit
 
 RECEIPT_EXTRACTION_TOOL = {
     "name": "extract_receipt",
@@ -62,12 +64,55 @@ async def list_expenses(
     return [to_dict(r) for r in rows]
 
 
+def _parse_expense_date(raw: str) -> date:
+    try:
+        return date.fromisoformat(raw)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid date format, expected YYYY-MM-DD")
+
+
+def _is_valid_uuid(value: str) -> bool:
+    try:
+        uuid_module.UUID(value)
+        return True
+    except (ValueError, AttributeError, TypeError):
+        return False
+
+
+async def _validate_category_and_vendor(db: AsyncSession, biz_id: str, category_id: str, vendor_id: Optional[str]) -> None:
+    """Ensure category_id (required) and vendor_id (optional) exist and
+    belong to this business, mirroring the FK-ownership pattern used for
+    Invoice.customer_id in routers/invoices.py.
+
+    UUID-format is checked before querying: a malformed (non-UUID) id would
+    otherwise reach the database as a raw string comparison against a UUID
+    column and raise an asyncpg DataError (500) instead of a clean 400.
+    """
+    if not _is_valid_uuid(category_id):
+        raise HTTPException(status_code=400, detail="Category not found for this business")
+    category = (await db.execute(
+        select(ExpenseCategory).where(ExpenseCategory.id == category_id, ExpenseCategory.business_id == biz_id)
+    )).scalar_one_or_none()
+    if not category:
+        raise HTTPException(status_code=400, detail="Category not found for this business")
+
+    if vendor_id is not None:
+        if not _is_valid_uuid(vendor_id):
+            raise HTTPException(status_code=400, detail="Vendor not found for this business")
+        vendor = (await db.execute(
+            select(Vendor).where(Vendor.id == vendor_id, Vendor.business_id == biz_id)
+        )).scalar_one_or_none()
+        if not vendor:
+            raise HTTPException(status_code=400, detail="Vendor not found for this business")
+
+
 @router.post("")
 async def create_expense(payload: ExpenseIn, ctx: dict = Depends(get_business), db: AsyncSession = Depends(get_db)):
     biz = ctx["business"]
     data = payload.model_dump()
+    await _validate_category_and_vendor(db, biz["id"], data["category_id"], data["vendor_id"])
     data["currency"] = data.get("currency") or biz.get("currency", "USD")
-    data["date"] = date.fromisoformat(data["date"])
+    data["date"] = _parse_expense_date(data["date"])
     expense = Expense(id=new_id(), business_id=biz["id"], **data)
     db.add(expense)
     await db.commit()
@@ -97,8 +142,9 @@ async def update_expense(
     if not expense:
         raise HTTPException(status_code=404, detail="Expense not found")
     data = payload.model_dump()
+    await _validate_category_and_vendor(db, biz_id, data["category_id"], data["vendor_id"])
     data["currency"] = data.get("currency") or expense.currency
-    data["date"] = date.fromisoformat(data["date"])
+    data["date"] = _parse_expense_date(data["date"])
     for key, value in data.items():
         setattr(expense, key, value)
     expense.updated_at = datetime.now(timezone.utc)
@@ -134,6 +180,11 @@ async def scan_receipt(
         raise HTTPException(status_code=400, detail="Unsupported image type. Use JPEG, PNG, WEBP, or GIF.")
 
     image_bytes = await file.read()
+    if len(image_bytes) > MAX_RECEIPT_IMAGE_BYTES:
+        raise HTTPException(
+            status_code=400,
+            detail="Image too large — please use a smaller photo (under ~3.5MB).",
+        )
     image_b64 = base64.standard_b64encode(image_bytes).decode("ascii")
 
     categories = (await db.execute(
@@ -176,4 +227,20 @@ async def scan_receipt(
             break
     if extracted is None:
         raise HTTPException(status_code=500, detail="AI returned no structured data")
+
+    # Don't trust the model's own claims about field formats/validity — make
+    # this endpoint's contract trustworthy regardless of what a future caller
+    # does with the response (defense in depth alongside the create/update
+    # validation below).
+    raw_date = extracted.get("date")
+    if raw_date is not None:
+        try:
+            date.fromisoformat(raw_date)
+        except (ValueError, TypeError):
+            extracted["date"] = None
+
+    known_category_ids = {c["id"] for c in known_categories}
+    if extracted.get("category_id") not in known_category_ids:
+        extracted["category_id"] = None
+
     return extracted

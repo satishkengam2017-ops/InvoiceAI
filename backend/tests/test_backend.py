@@ -340,6 +340,66 @@ class TestExpenses:
         r = s.delete(f"{API}/expense-categories/{cat_id}")
         assert r.status_code == 409
 
+    def test_create_rejects_category_from_other_business(self, auth_client, fresh_business):
+        """Cross-tenant FK guard: a category_id belonging to another
+        business must not be usable, even though it's a well-formed,
+        existing row."""
+        other_cat_id = self._make_category(fresh_business["session"], "TEST_Other_Biz_Category")
+        r = auth_client.post(f"{API}/expenses", json={
+            "category_id": other_cat_id, "date": "2026-08-01", "amount_cents": 100,
+        })
+        assert r.status_code == 400
+
+    def test_create_rejects_nonexistent_category(self, auth_client):
+        r = auth_client.post(f"{API}/expenses", json={
+            "category_id": str(uuid.uuid4()), "date": "2026-08-01", "amount_cents": 100,
+        })
+        assert r.status_code == 400
+
+    def test_create_rejects_malformed_category_id(self, auth_client):
+        r = auth_client.post(f"{API}/expenses", json={
+            "category_id": "not-a-uuid", "date": "2026-08-01", "amount_cents": 100,
+        })
+        assert r.status_code == 400
+
+    def test_create_rejects_invalid_vendor_id(self, auth_client):
+        cat_id = self._make_category(auth_client, "TEST_Vendor_Validation_Category")
+        r = auth_client.post(f"{API}/expenses", json={
+            "category_id": cat_id, "vendor_id": str(uuid.uuid4()), "date": "2026-08-01", "amount_cents": 100,
+        })
+        assert r.status_code == 400
+
+    def test_create_rejects_vendor_from_other_business(self, auth_client, fresh_business):
+        cat_id = self._make_category(auth_client, "TEST_Vendor_ISO_Category")
+        other_s = fresh_business["session"]
+        r = other_s.post(f"{API}/vendors", json={"name": "TEST_Other_Biz_Vendor"})
+        assert r.status_code == 200
+        other_vendor_id = r.json()["id"]
+
+        r = auth_client.post(f"{API}/expenses", json={
+            "category_id": cat_id, "vendor_id": other_vendor_id, "date": "2026-08-01", "amount_cents": 100,
+        })
+        assert r.status_code == 400
+
+    def test_update_rejects_category_from_other_business(self, auth_client, fresh_business):
+        cat_id = self._make_category(auth_client, "TEST_Update_Category")
+        r = auth_client.post(f"{API}/expenses", json={"category_id": cat_id, "date": "2026-08-01", "amount_cents": 100})
+        assert r.status_code == 200
+        eid = r.json()["id"]
+
+        other_cat_id = self._make_category(fresh_business["session"], "TEST_Update_Other_Biz_Category")
+        r = auth_client.patch(f"{API}/expenses/{eid}", json={
+            "category_id": other_cat_id, "date": "2026-08-01", "amount_cents": 100,
+        })
+        assert r.status_code == 400
+
+    def test_create_rejects_invalid_date_format(self, auth_client):
+        cat_id = self._make_category(auth_client, "TEST_Date_Validation_Category")
+        r = auth_client.post(f"{API}/expenses", json={
+            "category_id": cat_id, "date": "08/01/2026", "amount_cents": 100,
+        })
+        assert r.status_code == 400
+
 
 # ---------------------------------------------------------------------------
 # AI receipt scanning (graceful handling — mirrors TestAIExtract)
