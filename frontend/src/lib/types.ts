@@ -39,6 +39,44 @@ export type CatalogItem = {
   archived?: boolean;
 };
 
+export type Vendor = {
+  id: string;
+  business_id: string;
+  name: string;
+  email?: string | null;
+  phone?: string | null;
+  address_line1?: string | null;
+  city?: string | null;
+  region?: string | null;
+  postal_code?: string | null;
+  country?: string | null;
+  notes?: string | null;
+  archived?: boolean;
+};
+
+export type ExpenseCategory = {
+  id: string;
+  business_id: string;
+  name: string;
+  cra_t2125_line?: string | null;
+  is_default: boolean;
+  archived?: boolean;
+};
+
+export type Expense = {
+  id: string;
+  business_id: string;
+  vendor_id?: string | null;
+  category_id: string;
+  date: string;
+  amount_cents: number;
+  tax_cents: number;
+  currency: string;
+  payment_method?: string | null;
+  description?: string | null;
+  created_at: string;
+};
+
 export type LineItemDto = {
   name: string;
   description?: string | null;
