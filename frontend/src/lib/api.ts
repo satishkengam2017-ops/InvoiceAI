@@ -1,3 +1,5 @@
+import { Platform } from "react-native";
+
 import { storage } from "@/src/utils/storage";
 
 const BASE_URL = process.env.EXPO_PUBLIC_BACKEND_URL;
@@ -69,15 +71,22 @@ export type ScanReceiptResult = {
 };
 
 // Uses raw fetch (not apiFetch) because this is a multipart upload, not
-// JSON. Reading the picked image through fetch()+.blob() — rather than
-// building a React-Native-specific {uri, name, type} FormData entry —
-// works identically on native and web, per Expo's documented pattern for
-// expo-image-picker uploads.
+// JSON. On web, fetch()+.blob() is the correct, well-supported pattern for
+// building a file part. On React Native, FormData.append with a Blob
+// doesn't reliably carry a filename/content-type through RN's networking
+// layer — RN's documented pattern is a plain {uri, name, type} object
+// passed directly as the FormData value instead.
 export async function scanReceipt(fileUri: string, fileName: string, mimeType: string): Promise<ScanReceiptResult> {
   const token = await getToken();
-  const fileBlob = await (await fetch(fileUri)).blob();
   const form = new FormData();
-  form.append("file", fileBlob, fileName);
+  if (Platform.OS === "web") {
+    const fileBlob = await (await fetch(fileUri)).blob();
+    form.append("file", fileBlob, fileName);
+  } else {
+    // React Native's FormData/fetch polyfill expects this exact {uri, name, type}
+    // shape for a file part — a Blob doesn't reliably carry a filename here.
+    form.append("file", { uri: fileUri, name: fileName, type: mimeType } as unknown as Blob);
+  }
 
   const headers: Record<string, string> = {};
   if (token) headers.Authorization = `Bearer ${token}`;

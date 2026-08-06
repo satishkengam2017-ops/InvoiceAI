@@ -37,7 +37,14 @@
         }
       ],
       "@react-native-community/datetimepicker",
-      "expo-mail-composer"
+      "expo-mail-composer",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "InvoiceAI uses your photos to let you attach a receipt image when scanning an expense.",
+          "cameraPermission": "InvoiceAI uses your camera to let you photograph a receipt for automatic expense scanning."
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true

@@ -1,5 +1,5 @@
 import { Feather } from "@expo/vector-icons";
-import { useFocusEffect } from "expo-router";
+import { useFocusEffect, useRouter } from "expo-router";
 import * as ImagePicker from "expo-image-picker";
 import React, { useCallback, useState } from "react";
 import {
@@ -27,6 +27,7 @@ import { colors, radius, spacing, typography, webContent } from "@/src/lib/theme
 import type { Expense, ExpenseCategory, Vendor } from "@/src/lib/types";
 
 export default function Expenses() {
+  const router = useRouter();
   const [items, setItems] = useState<Expense[]>([]);
   const [categories, setCategories] = useState<ExpenseCategory[]>([]);
   const [vendors, setVendors] = useState<Vendor[]>([]);
@@ -108,6 +109,9 @@ export default function Expenses() {
         <View style={styles.headerActions}>
           <TouchableOpacity testID="expenses-manage-categories" onPress={() => setShowManageCategories(true)} style={styles.iconBtn}>
             <Feather name="tag" size={18} color={colors.brand} />
+          </TouchableOpacity>
+          <TouchableOpacity testID="expenses-goto-vendors" onPress={() => router.push("/vendors")} style={styles.iconBtn}>
+            <Feather name="briefcase" size={18} color={colors.brand} />
           </TouchableOpacity>
           <TouchableOpacity testID="expenses-scan-btn" onPress={scanReceiptPhoto} style={styles.iconBtn} disabled={scanning}>
             {scanning ? <ActivityIndicator size="small" color={colors.brand} /> : <Feather name="camera" size={18} color={colors.brand} />}
