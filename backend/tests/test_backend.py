@@ -342,6 +342,29 @@ class TestExpenses:
 
 
 # ---------------------------------------------------------------------------
+# AI receipt scanning (graceful handling — mirrors TestAIExtract)
+# ---------------------------------------------------------------------------
+class TestReceiptScan:
+    def test_no_key_returns_400(self, fresh_business):
+        s = fresh_business["session"]
+        files = {"file": ("receipt.jpg", b"fake-image-bytes", "image/jpeg")}
+        # The session sets Content-Type: application/json by default (see
+        # conftest.py); overriding it to None here lets `requests` generate
+        # the correct multipart/form-data boundary for the file upload.
+        r = s.post(f"{API}/expenses/scan-receipt", files=files, headers={"Content-Type": None})
+        assert r.status_code == 400
+        assert "Anthropic" in r.json().get("detail", "")
+
+    def test_invalid_key_returns_502(self, fresh_business):
+        s = fresh_business["session"]
+        r = s.patch(f"{API}/settings", json={"anthropic_api_key": "sk-ant-invalid-key-for-test"})
+        assert r.status_code == 200
+        files = {"file": ("receipt.jpg", b"fake-image-bytes", "image/jpeg")}
+        r = s.post(f"{API}/expenses/scan-receipt", files=files, headers={"Content-Type": None})
+        assert r.status_code == 502, f"expected 502, got {r.status_code} {r.text}"
+
+
+# ---------------------------------------------------------------------------
 # Catalog CRUD
 # ---------------------------------------------------------------------------
 class TestCatalog:
