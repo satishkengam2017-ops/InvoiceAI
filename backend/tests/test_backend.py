@@ -815,6 +815,80 @@ class TestEstimatesLifecycle:
 
 
 # ---------------------------------------------------------------------------
+# Estimate convert-to-invoice and email-pdf
+# ---------------------------------------------------------------------------
+class TestEstimatesConvertAndEmail:
+    def _make_estimate(self, s, cust_name="TEST_Cust_EstConv"):
+        r = s.post(f"{API}/customers", json={"name": cust_name})
+        assert r.status_code == 200
+        cid = r.json()["id"]
+        r = s.post(f"{API}/estimates", json={
+            "customer_id": cid,
+            "line_items": [{"name": "Roof repair", "quantity": 1, "unit_price_cents": 45000, "tax_percent": 5}],
+        })
+        assert r.status_code == 200, r.text
+        return r.json()
+
+    def test_convert_creates_matching_invoice(self, fresh_business):
+        s = fresh_business["session"]
+        est = self._make_estimate(s)
+        s.post(f"{API}/estimates/{est['id']}/send")
+        s.post(f"{API}/estimates/{est['id']}/accept")
+
+        r = s.post(f"{API}/estimates/{est['id']}/convert")
+        assert r.status_code == 200, r.text
+        inv = r.json()
+        assert inv["number"].startswith("INV-")
+        assert inv["status"] == "DRAFT"
+        assert inv["total_cents"] == est["total_cents"]
+        assert inv["customer"]["id"] == est["customer_id"]
+        names = [li["name"] for li in inv["line_items"]]
+        assert names == ["Roof repair"]
+
+        r = s.get(f"{API}/estimates/{est['id']}")
+        assert r.status_code == 200
+        updated_est = r.json()
+        assert updated_est["status"] == "CONVERTED"
+        assert updated_est["converted_invoice_id"] == inv["id"]
+        assert updated_est["converted_at"]
+
+        # The resulting invoice is real and independently fetchable.
+        r = s.get(f"{API}/invoices/{inv['id']}")
+        assert r.status_code == 200
+        assert r.json()["total_cents"] == est["total_cents"]
+
+    def test_convert_blocked_from_declined(self, fresh_business):
+        s = fresh_business["session"]
+        est = self._make_estimate(s)
+        s.post(f"{API}/estimates/{est['id']}/send")
+        s.post(f"{API}/estimates/{est['id']}/decline")
+
+        r = s.post(f"{API}/estimates/{est['id']}/convert")
+        assert r.status_code == 400
+
+    def test_convert_blocked_when_already_converted(self, fresh_business):
+        s = fresh_business["session"]
+        est = self._make_estimate(s)
+        r = s.post(f"{API}/estimates/{est['id']}/convert")
+        assert r.status_code == 200
+
+        r = s.post(f"{API}/estimates/{est['id']}/convert")
+        assert r.status_code == 400
+
+    def test_email_pdf_from_other_business_rejected(self, auth_client, fresh_business):
+        # Same regression shape as invoices.py's equivalent test: the 404
+        # check runs before any PDF rendering or Supabase upload, so this
+        # needs no external infra beyond the app itself.
+        s = fresh_business["session"]
+        est = self._make_estimate(s, cust_name="TEST_Cust_EstEmail")
+
+        r = auth_client.post(f"{API}/estimates/{est['id']}/email-pdf", json={
+            "html": "<html><body>Should not render</body></html>",
+        })
+        assert r.status_code == 404
+
+
+# ---------------------------------------------------------------------------
 # Dashboard
 # ---------------------------------------------------------------------------
 class TestDashboard:

@@ -3,7 +3,7 @@ decline/convert/duplicate/email-pdf, added in later tasks). Reuses the
 invoice engine's totals math (app.totals) and PDF/SSRF infrastructure
 (app.pdf_export) rather than duplicating either.
 """
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -13,8 +13,11 @@ from sqlalchemy.orm import selectinload
 
 from app.auth import get_business
 from app.db import get_db, to_dict
-from app.models import Business, Customer, Estimate, EstimateLineItem, new_id
-from app.schemas import EstimateIn
+from app.models import Business, Customer, Estimate, EstimateLineItem, Invoice, LineItem, new_id
+from app.pdf_export import render_and_upload_pdf
+from app.routers.business import check_plan_limit
+from app.routers.invoices import _get_invoice_with_items, _serialize_invoice
+from app.schemas import EmailPdfIn, EstimateIn
 from app.totals import compute_totals
 
 router = APIRouter(prefix="/estimates", tags=["estimates"])
@@ -282,3 +285,92 @@ async def duplicate_estimate(estimate_id: str, ctx: dict = Depends(get_business)
     await db.commit()
     result_est = await _get_estimate_with_items(db, new_estimate.id, biz_id)
     return await _serialize_estimate(db, result_est)
+
+
+@router.post("/{estimate_id}/convert")
+async def convert_estimate(estimate_id: str, ctx: dict = Depends(get_business), db: AsyncSession = Depends(get_db)):
+    biz = ctx["business"]
+    biz_id = biz["id"]
+    est = await _get_estimate_with_items(db, estimate_id, biz_id)
+    if not est:
+        raise HTTPException(status_code=404, detail="Estimate not found")
+    if est.status in ("DECLINED", "CONVERTED"):
+        raise HTTPException(status_code=400, detail=f"Cannot convert an estimate that is {est.status}")
+
+    plan_status = await check_plan_limit(db, biz_id, biz.get("plan", "FREE"))
+    if plan_status["over"]:
+        raise HTTPException(
+            status_code=402,
+            detail={
+                "error": "PLAN_LIMIT_REACHED",
+                "message": f"Your {biz.get('plan', 'FREE')} plan allows {plan_status['limit']} invoices per {plan_status['scope']}. Upgrade to create more.",
+                **plan_status,
+            },
+        )
+
+    seq = (await db.execute(
+        sql_update(Business)
+        .where(Business.id == biz_id)
+        .values(next_invoice_no=Business.next_invoice_no + 1)
+        .returning(Business.next_invoice_no)
+    )).scalar_one() - 1
+    number = f"{biz.get('invoice_prefix', 'INV')}-{str(seq).zfill(4)}"
+
+    now = datetime.now(timezone.utc)
+    due = (now + timedelta(days=biz.get("default_due_days", 14))).date()
+    new_invoice = Invoice(
+        id=new_id(),
+        business_id=biz_id,
+        customer_id=est.customer_id,
+        number=number,
+        status="DRAFT",
+        currency=est.currency,
+        issue_date=now.date(),
+        due_date=due,
+        discount_type=est.discount_type,
+        discount_value=est.discount_value,
+        subtotal_cents=est.subtotal_cents,
+        tax_total_cents=est.tax_total_cents,
+        discount_cents=est.discount_cents,
+        total_cents=est.total_cents,
+        amount_paid_cents=0,
+        notes=est.notes,
+        terms=est.terms or biz.get("default_terms"),
+        stripe_payment_url=biz.get("stripe_payment_url_default"),
+    )
+    for li in sorted(est.line_items, key=lambda x: x.sort_order):
+        new_invoice.line_items.append(LineItem(
+            sort_order=li.sort_order, name=li.name, description=li.description,
+            quantity=li.quantity, unit_price_cents=li.unit_price_cents, tax_percent=li.tax_percent,
+        ))
+    db.add(new_invoice)
+    # Flush the new invoice row now so its INSERT is issued before the
+    # estimate's UPDATE below. Without this, SQLAlchemy's flush ordering has
+    # no relationship() linking Estimate<->Invoice to infer the dependency
+    # from, and can emit the estimates UPDATE (which sets
+    # converted_invoice_id) before the invoices INSERT it references,
+    # tripping the estimates_converted_invoice_id_fkey constraint. flush()
+    # does not commit, so this stays in the same transaction as the single
+    # db.commit() below.
+    await db.flush()
+
+    est.status = "CONVERTED"
+    est.converted_invoice_id = new_invoice.id
+    est.converted_at = now
+    est.updated_at = now
+
+    await db.commit()
+    result_inv = await _get_invoice_with_items(db, new_invoice.id, biz_id)
+    return await _serialize_invoice(db, result_inv)
+
+
+@router.post("/{estimate_id}/email-pdf")
+async def email_pdf(
+    estimate_id: str, payload: EmailPdfIn, ctx: dict = Depends(get_business), db: AsyncSession = Depends(get_db)
+):
+    biz_id = ctx["business"]["id"]
+    est = await _get_estimate_with_items(db, estimate_id, biz_id)
+    if not est:
+        raise HTTPException(status_code=404, detail="Estimate not found")
+    url = await render_and_upload_pdf(payload.html, biz_id, est.id)
+    return {"url": url}
