@@ -51,6 +51,10 @@ export default function AppLayout() {
         }}
       />
       <Tabs.Screen
+        name="vendors"
+        options={{ href: null }}
+      />
+      <Tabs.Screen
         name="settings"
         options={{
           title: "Settings",
