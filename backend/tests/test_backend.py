@@ -885,6 +885,50 @@ class TestEstimatesConvertAndEmail:
         })
         assert r.status_code == 404
 
+    def test_convert_blocked_over_plan_limit(self, fresh_business):
+        # Mirrors TestInvoicesLifecycle.test_free_plan_lifetime_limit: the
+        # FREE plan allows 5 invoices lifetime (PLAN_LIMITS in
+        # app/routers/business.py). check_plan_limit counts Invoice rows
+        # regardless of how they were created, so filling the quota with
+        # plain invoices and then attempting to convert an estimate must
+        # still be blocked with 402 PLAN_LIMIT_REACHED.
+        s = fresh_business["session"]
+        est = self._make_estimate(s)
+        s.post(f"{API}/estimates/{est['id']}/send")
+        s.post(f"{API}/estimates/{est['id']}/accept")
+
+        cid = est["customer_id"]
+        invoice_payload = {
+            "customer_id": cid,
+            "line_items": [{"name": "Item", "quantity": 1, "unit_price_cents": 1000}],
+        }
+        created = 0
+        for _ in range(5):
+            r = s.post(f"{API}/invoices", json=invoice_payload)
+            if r.status_code == 200:
+                created += 1
+            else:
+                break
+        assert created == 5, f"Expected to create 5, only created {created}"
+
+        r = s.post(f"{API}/estimates/{est['id']}/convert")
+        assert r.status_code == 402, r.text
+        detail = r.json().get("detail", {})
+        if isinstance(detail, dict):
+            assert detail.get("error") == "PLAN_LIMIT_REACHED"
+
+    def test_convert_from_other_business_rejected(self, auth_client, fresh_business):
+        # Cross-tenant isolation specifically on convert: existing isolation
+        # tests only cover GET list/detail, not the highest-consequence
+        # lifecycle action (it mutates state and creates a real invoice).
+        s = fresh_business["session"]
+        est = self._make_estimate(s, cust_name="TEST_Cust_EstConvXBiz")
+        s.post(f"{API}/estimates/{est['id']}/send")
+        s.post(f"{API}/estimates/{est['id']}/accept")
+
+        r = auth_client.post(f"{API}/estimates/{est['id']}/convert")
+        assert r.status_code == 404, r.text
+
 
 # ---------------------------------------------------------------------------
 # Dashboard
