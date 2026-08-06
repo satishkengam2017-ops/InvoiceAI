@@ -21,9 +21,11 @@ import { api } from "@/src/lib/api";
 import { downloadCsv, toCsv, todayStamp } from "@/src/lib/csv";
 import { formatMoney } from "@/src/lib/money";
 import { colors, radius, spacing, typography, webContent } from "@/src/lib/theme";
-import type { Invoice, InvoiceStatus } from "@/src/lib/types";
+import type { Estimate, EstimateStatus, Invoice, InvoiceStatus } from "@/src/lib/types";
 
-const FILTERS: ({ key: "ALL"; label: string } | { key: InvoiceStatus; label: string })[] = [
+type Mode = "INVOICES" | "ESTIMATES";
+
+const INVOICE_FILTERS: ({ key: "ALL"; label: string } | { key: InvoiceStatus; label: string })[] = [
   { key: "ALL", label: "All" },
   { key: "DRAFT", label: "Draft" },
   { key: "SENT", label: "Sent" },
@@ -32,20 +34,39 @@ const FILTERS: ({ key: "ALL"; label: string } | { key: InvoiceStatus; label: str
   { key: "VOID", label: "Void" },
 ];
 
+const ESTIMATE_FILTERS: ({ key: "ALL"; label: string } | { key: EstimateStatus; label: string })[] = [
+  { key: "ALL", label: "All" },
+  { key: "DRAFT", label: "Draft" },
+  { key: "SENT", label: "Sent" },
+  { key: "ACCEPTED", label: "Accepted" },
+  { key: "DECLINED", label: "Declined" },
+  { key: "CONVERTED", label: "Converted" },
+];
+
 export default function Invoices() {
   const router = useRouter();
-  const [items, setItems] = useState<Invoice[]>([]);
+  const [mode, setMode] = useState<Mode>("INVOICES");
+
+  const [invoiceItems, setInvoiceItems] = useState<Invoice[]>([]);
+  const [invoiceFilter, setInvoiceFilter] = useState<"ALL" | InvoiceStatus>("ALL");
+
+  const [estimateItems, setEstimateItems] = useState<Estimate[]>([]);
+  const [estimateFilter, setEstimateFilter] = useState<"ALL" | EstimateStatus>("ALL");
+
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [filter, setFilter] = useState<"ALL" | InvoiceStatus>("ALL");
   const [search, setSearch] = useState("");
   const [fromDate, setFromDate] = useState("");
   const [toDate, setToDate] = useState("");
 
   const load = useCallback(async () => {
     try {
-      const data = await api.get<Invoice[]>("/invoices");
-      setItems(data);
+      const [invoices, estimates] = await Promise.all([
+        api.get<Invoice[]>("/invoices"),
+        api.get<Estimate[]>("/estimates"),
+      ]);
+      setInvoiceItems(invoices);
+      setEstimateItems(estimates);
     } catch {
       /* ignore — AuthContext redirects if the session is invalid */
     } finally {
@@ -56,16 +77,27 @@ export default function Invoices() {
 
   useFocusEffect(useCallback(() => { load(); }, [load]));
 
-  const filtered = useMemo(() => {
-    return items.filter((inv) => {
-      if (filter !== "ALL" && inv.status !== filter) return false;
+  const filteredInvoices = useMemo(() => {
+    return invoiceItems.filter((inv) => {
+      if (invoiceFilter !== "ALL" && inv.status !== invoiceFilter) return false;
       if (search) {
         const hay = `${inv.number} ${inv.customer?.name || ""}`.toLowerCase();
         if (!hay.includes(search.toLowerCase())) return false;
       }
       return true;
     });
-  }, [items, filter, search]);
+  }, [invoiceItems, invoiceFilter, search]);
+
+  const filteredEstimates = useMemo(() => {
+    return estimateItems.filter((est) => {
+      if (estimateFilter !== "ALL" && est.status !== estimateFilter) return false;
+      if (search) {
+        const hay = `${est.number} ${est.customer?.name || ""}`.toLowerCase();
+        if (!hay.includes(search.toLowerCase())) return false;
+      }
+      return true;
+    });
+  }, [estimateItems, estimateFilter, search]);
 
   const exportCsv = async () => {
     // ISO YYYY-MM-DD strings compare correctly as plain strings.
@@ -75,7 +107,7 @@ export default function Invoices() {
       if (toDate.trim() && d > toDate.trim()) return false;
       return true;
     };
-    const rows = filtered.filter(inRange).map((inv) => {
+    const rows = filteredInvoices.filter(inRange).map((inv) => {
       const lineDesc = inv.line_items
         .map((li) => `${li.quantity} x ${li.name}${li.description ? ` (${li.description})` : ""}`)
         .join("; ");
@@ -101,10 +133,33 @@ export default function Invoices() {
   return (
     <SafeAreaView style={styles.safe} edges={["top"]}>
       <View style={[styles.header, webContent]}>
-        <Text style={styles.title}>Invoices</Text>
-        <TouchableOpacity testID="invoices-new-btn" onPress={() => router.push("/invoices/new")} style={styles.newBtn} activeOpacity={0.85}>
+        <Text style={styles.title}>{mode === "INVOICES" ? "Invoices" : "Estimates"}</Text>
+        <TouchableOpacity
+          testID="invoices-new-btn"
+          onPress={() => router.push(mode === "INVOICES" ? "/invoices/new" : "/estimates/new")}
+          style={styles.newBtn}
+          activeOpacity={0.85}
+        >
           <Feather name="plus" size={16} color={colors.onBrandPrimary} />
           <Text style={styles.newBtnText}>New</Text>
+        </TouchableOpacity>
+      </View>
+
+      {/* Invoices/Estimates segmented toggle */}
+      <View style={[styles.segmentRow, webContent]}>
+        <TouchableOpacity
+          testID="mode-invoices"
+          onPress={() => setMode("INVOICES")}
+          style={[styles.segment, mode === "INVOICES" && styles.segmentActive]}
+        >
+          <Text style={[styles.segmentText, mode === "INVOICES" && styles.segmentTextActive]}>Invoices</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          testID="mode-estimates"
+          onPress={() => setMode("ESTIMATES")}
+          style={[styles.segment, mode === "ESTIMATES" && styles.segmentActive]}
+        >
+          <Text style={[styles.segmentText, mode === "ESTIMATES" && styles.segmentTextActive]}>Estimates</Text>
         </TouchableOpacity>
       </View>
 
@@ -112,7 +167,7 @@ export default function Invoices() {
         <Feather name="search" size={16} color={colors.muted} />
         <TextInput
           testID="invoices-search"
-          placeholder="Search by number or customer"
+          placeholder={mode === "INVOICES" ? "Search by number or customer" : "Search by number or customer"}
           placeholderTextColor={colors.muted}
           style={styles.searchInput}
           value={search}
@@ -120,21 +175,23 @@ export default function Invoices() {
         />
       </View>
 
-      {/* Report export: date range + CSV download */}
-      <View style={[styles.exportSection, webContent]}>
-        <View style={styles.dateRow}>
-          <View style={styles.dateFieldWrap}>
-            <DateField testID="invoices-from-date" placeholder="From date" value={fromDate} onChange={setFromDate} maximumDate={toDate ? new Date(toDate) : undefined} />
+      {/* Report export: date range + CSV download — invoices only */}
+      {mode === "INVOICES" ? (
+        <View style={[styles.exportSection, webContent]}>
+          <View style={styles.dateRow}>
+            <View style={styles.dateFieldWrap}>
+              <DateField testID="invoices-from-date" placeholder="From date" value={fromDate} onChange={setFromDate} maximumDate={toDate ? new Date(toDate) : undefined} />
+            </View>
+            <View style={styles.dateFieldWrap}>
+              <DateField testID="invoices-to-date" placeholder="To date" value={toDate} onChange={setToDate} minimumDate={fromDate ? new Date(fromDate) : undefined} />
+            </View>
           </View>
-          <View style={styles.dateFieldWrap}>
-            <DateField testID="invoices-to-date" placeholder="To date" value={toDate} onChange={setToDate} minimumDate={fromDate ? new Date(fromDate) : undefined} />
-          </View>
+          <TouchableOpacity testID="invoices-download-csv" style={styles.csvBtn} onPress={exportCsv} activeOpacity={0.85}>
+            <Feather name="download" size={14} color={colors.brand} />
+            <Text style={styles.csvBtnText}>Download CSV</Text>
+          </TouchableOpacity>
         </View>
-        <TouchableOpacity testID="invoices-download-csv" style={styles.csvBtn} onPress={exportCsv} activeOpacity={0.85}>
-          <Feather name="download" size={14} color={colors.brand} />
-          <Text style={styles.csvBtnText}>Download CSV</Text>
-        </TouchableOpacity>
-      </View>
+      ) : null}
 
       <ScrollView
         horizontal
@@ -142,13 +199,13 @@ export default function Invoices() {
         contentContainerStyle={styles.chipsRow}
         style={[styles.chipsScroll, webContent]}
       >
-        {FILTERS.map((f) => {
-          const active = filter === f.key;
+        {(mode === "INVOICES" ? INVOICE_FILTERS : ESTIMATE_FILTERS).map((f) => {
+          const active = mode === "INVOICES" ? invoiceFilter === f.key : estimateFilter === f.key;
           return (
             <TouchableOpacity
               key={f.key}
               testID={`invoices-chip-${f.key.toLowerCase()}`}
-              onPress={() => setFilter(f.key)}
+              onPress={() => (mode === "INVOICES" ? setInvoiceFilter(f.key as "ALL" | InvoiceStatus) : setEstimateFilter(f.key as "ALL" | EstimateStatus))}
               activeOpacity={0.85}
               style={[styles.chip, active && styles.chipActive]}
             >
@@ -160,29 +217,62 @@ export default function Invoices() {
 
       {loading ? (
         <ActivityIndicator style={{ marginTop: 40 }} size="large" color={colors.brand} />
-      ) : filtered.length === 0 ? (
+      ) : mode === "INVOICES" ? (
+        filteredInvoices.length === 0 ? (
+          <EmptyState
+            testID="invoices-empty"
+            title="No invoices match this filter"
+            subtitle="Try a different filter or create a new invoice."
+          />
+        ) : (
+          <FlatList
+            data={filteredInvoices}
+            keyExtractor={(i) => i.id}
+            refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} tintColor={colors.brand} />}
+            contentContainerStyle={[styles.list, webContent]}
+            renderItem={({ item }) => (
+              <TouchableOpacity
+                testID={`invoice-card-${item.number}`}
+                style={styles.card}
+                onPress={() => router.push({ pathname: "/invoices/[id]", params: { id: item.id } })}
+                activeOpacity={0.85}
+              >
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.cardNumber}>{item.number}</Text>
+                  <Text style={styles.cardCustomer}>{item.customer?.name || "—"}</Text>
+                  <Text style={styles.cardDate}>Due {item.due_date}</Text>
+                </View>
+                <View style={{ alignItems: "flex-end", gap: 6 }}>
+                  <Text style={styles.cardAmount}>{formatMoney(item.total_cents, item.currency)}</Text>
+                  <StatusPill status={item.status} />
+                </View>
+              </TouchableOpacity>
+            )}
+          />
+        )
+      ) : filteredEstimates.length === 0 ? (
         <EmptyState
-          testID="invoices-empty"
-          title="No invoices match this filter"
-          subtitle="Try a different filter or create a new invoice."
+          testID="estimates-empty"
+          title="No estimates match this filter"
+          subtitle="Try a different filter or create a new estimate."
         />
       ) : (
         <FlatList
-          data={filtered}
+          data={filteredEstimates}
           keyExtractor={(i) => i.id}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} tintColor={colors.brand} />}
           contentContainerStyle={[styles.list, webContent]}
           renderItem={({ item }) => (
             <TouchableOpacity
-              testID={`invoice-card-${item.number}`}
+              testID={`estimate-card-${item.number}`}
               style={styles.card}
-              onPress={() => router.push({ pathname: "/invoices/[id]", params: { id: item.id } })}
+              onPress={() => router.push({ pathname: "/estimates/[id]", params: { id: item.id } })}
               activeOpacity={0.85}
             >
               <View style={{ flex: 1 }}>
                 <Text style={styles.cardNumber}>{item.number}</Text>
                 <Text style={styles.cardCustomer}>{item.customer?.name || "—"}</Text>
-                <Text style={styles.cardDate}>Due {item.due_date}</Text>
+                <Text style={styles.cardDate}>{item.expiry_date ? `Expires ${item.expiry_date}` : "No expiry"}</Text>
               </View>
               <View style={{ alignItems: "flex-end", gap: 6 }}>
                 <Text style={styles.cardAmount}>{formatMoney(item.total_cents, item.currency)}</Text>
@@ -217,6 +307,24 @@ const styles = StyleSheet.create({
     borderRadius: radius.pill,
   },
   newBtnText: { color: colors.onBrandPrimary, fontWeight: "500", fontSize: typography.base },
+  segmentRow: {
+    flexDirection: "row",
+    marginHorizontal: spacing.lg,
+    marginTop: spacing.sm,
+    backgroundColor: colors.surfaceTertiary,
+    borderRadius: radius.pill,
+    padding: 3,
+  },
+  segment: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    height: 36,
+    borderRadius: radius.pill,
+  },
+  segmentActive: { backgroundColor: colors.surfaceSecondary },
+  segmentText: { fontSize: typography.base, fontWeight: "500", color: colors.onSurfaceTertiary },
+  segmentTextActive: { color: colors.onSurface },
   searchWrap: {
     marginHorizontal: spacing.lg,
     marginTop: spacing.sm,
