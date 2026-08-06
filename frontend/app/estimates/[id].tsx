@@ -20,6 +20,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { StatusPill } from "@/src/components/StatusPill";
 import { useAuth } from "@/src/context/AuthContext";
 import { api } from "@/src/lib/api";
+import { confirmAsync } from "@/src/lib/confirm";
 import { estimateHtml, generateEstimatePdfFile } from "@/src/lib/estimatePdf";
 import { formatMoney } from "@/src/lib/money";
 import { colors, radius, spacing, typography, webContent } from "@/src/lib/theme";
@@ -34,6 +35,7 @@ export default function EstimateDetail() {
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [showActions, setShowActions] = useState(false);
+  const [convertErr, setConvertErr] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     if (!id) return;
@@ -168,27 +170,21 @@ export default function EstimateDetail() {
   };
 
   const declineEstimate = async () => {
-    Alert.alert("Decline estimate?", "This can't be undone.", [
-      { text: "Cancel", style: "cancel" },
-      {
-        text: "Decline",
-        style: "destructive",
-        onPress: async () => {
-          setBusy(true);
-          try {
-            const updated = await api.post<Estimate>(`/estimates/${estimate.id}/decline`, {});
-            setEstimate(updated);
-          } catch (e) {
-            Alert.alert("Error", e instanceof Error ? e.message : "Failed");
-          } finally {
-            setBusy(false);
-          }
-        },
-      },
-    ]);
+    const ok = await confirmAsync("Decline estimate?", "This can't be undone.");
+    if (!ok) return;
+    setBusy(true);
+    try {
+      const updated = await api.post<Estimate>(`/estimates/${estimate.id}/decline`, {});
+      setEstimate(updated);
+    } catch (e) {
+      Alert.alert("Error", e instanceof Error ? e.message : "Failed");
+    } finally {
+      setBusy(false);
+    }
   };
 
   const convertToInvoice = async () => {
+    setConvertErr(null);
     setBusy(true);
     try {
       const inv = await api.post<Invoice>(`/estimates/${estimate.id}/convert`, {});
@@ -196,7 +192,7 @@ export default function EstimateDetail() {
     } catch (e: unknown) {
       const err = e as Error & { body?: { detail?: { error?: string; message?: string } } };
       if (err.body?.detail?.error === "PLAN_LIMIT_REACHED") {
-        Alert.alert("Plan limit reached", err.body.detail.message || "Upgrade in Settings.");
+        setConvertErr(err.body.detail.message || "Plan limit reached. Upgrade in Settings.");
       } else {
         Alert.alert("Error", err.message || "Failed to convert");
       }
@@ -219,25 +215,18 @@ export default function EstimateDetail() {
   };
 
   const deleteDraft = async () => {
-    Alert.alert("Delete estimate?", "This can't be undone.", [
-      { text: "Cancel", style: "cancel" },
-      {
-        text: "Delete",
-        style: "destructive",
-        onPress: async () => {
-          setBusy(true);
-          try {
-            await api.del(`/estimates/${estimate.id}`);
-            setShowActions(false);
-            router.back();
-          } catch (e) {
-            Alert.alert("Error", e instanceof Error ? e.message : "Failed");
-          } finally {
-            setBusy(false);
-          }
-        },
-      },
-    ]);
+    const ok = await confirmAsync("Delete estimate?", "This can't be undone.");
+    if (!ok) return;
+    setBusy(true);
+    try {
+      await api.del(`/estimates/${estimate.id}`);
+      setShowActions(false);
+      router.back();
+    } catch (e) {
+      Alert.alert("Error", e instanceof Error ? e.message : "Failed");
+    } finally {
+      setBusy(false);
+    }
   };
 
   return (
@@ -376,6 +365,7 @@ export default function EstimateDetail() {
         </View>
         {canConvert ? (
           <View style={[webContent, { marginTop: spacing.sm }]}>
+            {convertErr ? <Text style={styles.err}>{convertErr}</Text> : null}
             <TouchableOpacity
               testID="estimate-convert-btn"
               style={styles.convertBtn}
@@ -540,6 +530,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.brandTertiary,
   },
   convertBtnText: { color: colors.brand, fontWeight: "500", fontSize: typography.base },
+  err: { color: colors.error, fontSize: typography.base, marginBottom: spacing.sm, textAlign: "center" },
   modalOverlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.4)", justifyContent: "flex-end" },
   actionsSheet: {
     backgroundColor: colors.surface,

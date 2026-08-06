@@ -135,7 +135,7 @@ export default function Invoices() {
       <View style={[styles.header, webContent]}>
         <Text style={styles.title}>{mode === "INVOICES" ? "Invoices" : "Estimates"}</Text>
         <TouchableOpacity
-          testID="invoices-new-btn"
+          testID={mode === "INVOICES" ? "invoices-new-btn" : "estimates-new-btn"}
           onPress={() => router.push(mode === "INVOICES" ? "/invoices/new" : "/estimates/new")}
           style={styles.newBtn}
           activeOpacity={0.85}
@@ -166,7 +166,7 @@ export default function Invoices() {
       <View style={[styles.searchWrap, webContent]}>
         <Feather name="search" size={16} color={colors.muted} />
         <TextInput
-          testID="invoices-search"
+          testID={mode === "INVOICES" ? "invoices-search" : "estimates-search"}
           placeholder="Search by number or customer"
           placeholderTextColor={colors.muted}
           style={styles.searchInput}

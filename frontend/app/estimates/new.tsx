@@ -18,6 +18,7 @@ import { Button } from "@/src/components/Button";
 import { Card } from "@/src/components/Card";
 import { DateField } from "@/src/components/DateField";
 import { Input } from "@/src/components/Input";
+import { useAuth } from "@/src/context/AuthContext";
 import { api } from "@/src/lib/api";
 import { computeTotals, formatMoney, parseCents } from "@/src/lib/money";
 import { colors, radius, spacing, typography, webContent } from "@/src/lib/theme";
@@ -25,6 +26,8 @@ import type { CatalogItem, Customer, Estimate, LineItemDto } from "@/src/lib/typ
 
 export default function NewEstimate() {
   const router = useRouter();
+  const { business } = useAuth();
+  const currency = business?.currency || "USD";
 
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [catalog, setCatalog] = useState<CatalogItem[]>([]);
@@ -188,7 +191,7 @@ export default function NewEstimate() {
                   </View>
                 </View>
                 <Text style={styles.lineTotal}>
-                  Line total: {formatMoney(Math.round(li.quantity * li.unit_price_cents * (1 + (li.tax_percent || 0) / 100)), "USD")}
+                  Line total: {formatMoney(Math.round(li.quantity * li.unit_price_cents * (1 + (li.tax_percent || 0) / 100)), currency)}
                 </Text>
               </View>
             ))}
@@ -219,7 +222,7 @@ export default function NewEstimate() {
         <View style={styles.bottomBar}>
           <View style={{ flex: 1 }}>
             <Text style={styles.bottomBarLabel}>Total</Text>
-            <Text style={styles.bottomBarTotal}>{formatMoney(totals.total, "USD")}</Text>
+            <Text style={styles.bottomBarTotal}>{formatMoney(totals.total, currency)}</Text>
           </View>
           {saveErr ? <Text style={[styles.err, { position: "absolute", top: -22, left: spacing.lg, right: spacing.lg }]}>{saveErr}</Text> : null}
           <Button testID="save-estimate-btn" title="Save & Preview" loading={saving} onPress={save} />
