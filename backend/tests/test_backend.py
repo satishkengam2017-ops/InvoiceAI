@@ -699,27 +699,25 @@ class TestEstimatesCRUD:
         assert r.status_code == 404
 
     def test_delete_blocked_once_sent(self, fresh_business):
-        # NOTE: deviates from the plan's literal test body, which drove this
-        # via POST /estimates/{id}/send. That endpoint doesn't exist yet -
-        # it's added by Task 5 (TestEstimatesLifecycle), which runs after
-        # this task. Task 4's own EstimateIn/create_estimate already accepts
-        # an explicit `status` on creation (mirroring how InvoiceIn/
-        # create_invoice accepts `status` too), so we reach the same "estimate
-        # in a non-DRAFT state" precondition directly through create, without
-        # depending on a not-yet-implemented endpoint. Once Task 5 lands,
-        # this still exercises the identical PATCH/DELETE-blocked-once-
-        # non-DRAFT behavior; only the setup path differs.
+        # Drives the estimate to SENT via the real POST /estimates/{id}/send
+        # lifecycle endpoint (added in Task 5), rather than the removed
+        # client-settable `status` on create (POST /estimates always creates
+        # a DRAFT now - see Finding 4 of the final backend review).
         s = fresh_business["session"]
         cid = self._make_customer(s)
         r = s.post(f"{API}/estimates", json={
             "customer_id": cid,
             "line_items": [{"name": "Item", "quantity": 1, "unit_price_cents": 1000}],
-            "status": "SENT",
         })
         assert r.status_code == 200, r.text
         est = r.json()
-        assert est["status"] == "SENT"
+        assert est["status"] == "DRAFT"
         eid = est["id"]
+
+        r = s.post(f"{API}/estimates/{eid}/send")
+        assert r.status_code == 200, r.text
+        est = r.json()
+        assert est["status"] == "SENT"
 
         r = s.delete(f"{API}/estimates/{eid}")
         assert r.status_code == 400

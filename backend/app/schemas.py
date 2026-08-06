@@ -146,7 +146,6 @@ class EstimateIn(BaseModel):
     discount_value: Optional[int] = 0
     notes: Optional[str] = None
     terms: Optional[str] = None
-    status: Optional[str] = "DRAFT"
 
 
 class AIExtractIn(BaseModel):

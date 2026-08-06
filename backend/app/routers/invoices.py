@@ -2,7 +2,7 @@
 create/duplicate, mark-paid/send/void.
 """
 from datetime import date, datetime, timedelta, timezone
-from typing import List, Optional
+from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select, update as sql_update

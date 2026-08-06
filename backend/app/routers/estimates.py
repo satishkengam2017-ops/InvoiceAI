@@ -23,6 +23,13 @@ from app.totals import compute_totals
 router = APIRouter(prefix="/estimates", tags=["estimates"])
 
 
+def _parse_estimate_date(raw: str) -> date:
+    try:
+        return date.fromisoformat(raw)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid date format, expected YYYY-MM-DD")
+
+
 def _line_item_dict(li: EstimateLineItem) -> dict:
     return {
         "name": li.name,
@@ -111,15 +118,15 @@ async def create_estimate(payload: EstimateIn, ctx: dict = Depends(get_business)
     totals = compute_totals(line_item_dicts, payload.discount_type, payload.discount_value or 0)
 
     now = datetime.now(timezone.utc)
-    issue = date.fromisoformat(payload.issue_date) if payload.issue_date else now.date()
-    expiry = date.fromisoformat(payload.expiry_date) if payload.expiry_date else None
+    issue = _parse_estimate_date(payload.issue_date) if payload.issue_date else now.date()
+    expiry = _parse_estimate_date(payload.expiry_date) if payload.expiry_date else None
 
     estimate = Estimate(
         id=new_id(),
         business_id=biz_id,
         customer_id=payload.customer_id,
         number=number,
-        status=(payload.status or "DRAFT").upper(),
+        status="DRAFT",
         currency=biz.get("currency", "USD"),
         issue_date=issue,
         expiry_date=expiry,
@@ -169,8 +176,8 @@ async def update_estimate(
     est.total_cents = totals["total_cents"]
     est.notes = payload.notes
     est.terms = payload.terms
-    est.issue_date = date.fromisoformat(payload.issue_date) if payload.issue_date else est.issue_date
-    est.expiry_date = date.fromisoformat(payload.expiry_date) if payload.expiry_date else est.expiry_date
+    est.issue_date = _parse_estimate_date(payload.issue_date) if payload.issue_date else est.issue_date
+    est.expiry_date = _parse_estimate_date(payload.expiry_date) if payload.expiry_date else est.expiry_date
     est.updated_at = datetime.now(timezone.utc)
 
     est.line_items.clear()
