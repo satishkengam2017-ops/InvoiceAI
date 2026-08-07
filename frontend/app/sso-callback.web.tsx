@@ -11,20 +11,38 @@ import { colors } from "@/src/lib/theme";
 // native's popup-based useSSO() flow (sso-callback.tsx), a redirect flow
 // lands back here as a brand-new page load, so this route has to finish the
 // Clerk handshake itself rather than just closing a popup.
+//
+// clerk.handleRedirectCallback()'s returned promise resolves before the
+// session is actually established - the installed SDK's isomorphic wrapper
+// fires the real work without awaiting it internally. Chaining getToken()
+// straight off that await used to see a still-null session and throw,
+// silently bouncing the user back to sign-in even though the Google auth
+// had succeeded (a second "Continue with Google" click then worked, via
+// GoogleSignInButton.web.tsx's isSignedIn fast path, since Clerk had a
+// session by then). Reacting to isSignedIn flipping true instead - rather
+// than to the handleRedirectCallback promise - waits for the real signal.
+const TIMEOUT_MS = 8000;
+
 export default function SSOCallbackWeb() {
   const clerk = useClerk();
-  const { getToken } = useClerkAuth();
+  const { getToken, isSignedIn, isLoaded } = useClerkAuth();
   const { signInWithClerk } = useAppAuth();
   const router = useRouter();
-  const ran = useRef(false);
+  const startedRef = useRef(false);
+  const finishedRef = useRef(false);
 
   useEffect(() => {
-    if (ran.current) return;
-    ran.current = true;
+    if (startedRef.current) return;
+    startedRef.current = true;
+    clerk.handleRedirectCallback({}).catch(() => {});
+  }, [clerk]);
+
+  useEffect(() => {
+    if (finishedRef.current || !isLoaded || !isSignedIn) return;
+    finishedRef.current = true;
 
     (async () => {
       try {
-        await clerk.handleRedirectCallback({});
         const token = await getToken();
         if (!token) throw new Error("Could not retrieve Google sign-in session.");
         await signInWithClerk(token);
@@ -33,7 +51,19 @@ export default function SSOCallbackWeb() {
         router.replace("/(auth)/sign-in");
       }
     })();
-  }, [clerk, getToken, signInWithClerk, router]);
+  }, [isLoaded, isSignedIn, getToken, signInWithClerk, router]);
+
+  // Covers genuine failures (denied consent, invalid OAuth state, etc.)
+  // that never flip isSignedIn, which would otherwise leave this screen
+  // spinning forever.
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      if (finishedRef.current) return;
+      finishedRef.current = true;
+      router.replace("/(auth)/sign-in");
+    }, TIMEOUT_MS);
+    return () => clearTimeout(timer);
+  }, [router]);
 
   return (
     <View style={styles.wrap}>
