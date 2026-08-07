@@ -19,7 +19,7 @@ type Props = {
 // sso-callback.web.tsx.
 export function GoogleSignInButton({ onError }: Props) {
   const { signIn } = useSignIn();
-  const { getToken, isSignedIn } = useClerkAuth();
+  const { getToken, isSignedIn, isLoaded } = useClerkAuth();
   const { signInWithClerk } = useAppAuth();
   const [busy, setBusy] = useState(false);
 
@@ -59,14 +59,19 @@ export function GoogleSignInButton({ onError }: Props) {
   };
 
   return (
+    // isLoaded gates on Clerk's own async init, which finishes shortly after
+    // this button first renders - without it, a click landing in that
+    // window hits the "not ready yet" branch above instead of starting the
+    // redirect, so the user's first click appears to do nothing and a
+    // second click (after Clerk has now loaded) is what actually works.
     <TouchableOpacity
       testID="continue-with-google"
       style={styles.btn}
       onPress={onPress}
-      disabled={busy}
+      disabled={busy || !isLoaded}
       activeOpacity={0.85}
     >
-      {busy ? (
+      {busy || !isLoaded ? (
         <ActivityIndicator color={colors.onSurface} />
       ) : (
         <Text style={styles.text}>Continue with Google</Text>
