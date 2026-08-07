@@ -40,10 +40,17 @@ export function GoogleSignInButton({ onError }: Props) {
         return;
       }
       if (!signIn) throw new Error("Google sign-in is not ready yet. Please try again.");
+      // Both URLs must be absolute. redirectCallbackUrl in particular is
+      // sent to Clerk's backend as-is in production (unlike redirectUrl,
+      // which gets a relative-to-origin fallback) - a relative path here
+      // leaves Clerk with no way to route back to this app's own domain
+      // after the OAuth flow completes, so it strands the user on its own
+      // hosted Account Portal instead.
+      const callbackUrl = `${window.location.origin}/sso-callback`;
       const { error } = await signIn.sso({
         strategy: "oauth_google",
-        redirectUrl: "/sso-callback",
-        redirectCallbackUrl: "/sso-callback",
+        redirectUrl: callbackUrl,
+        redirectCallbackUrl: callbackUrl,
       });
       // longMessage is Clerk's user-facing text (message is for developers
       // and isn't guaranteed stable) - this is likely the source of the
